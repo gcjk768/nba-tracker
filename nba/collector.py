@@ -61,6 +61,8 @@ def store_game(conn, parsed, source):
             for k, v in ex.wpa(plays, g["home"], g["away"]).items():
                 db.upsert(conn, "player_wpa", {"game_id": g["game_id"], "key": k,
                                                "team": k[5:] if k.startswith("TEAM:") else team_of.get(k), "wpa": v})
+        for name in parsed.get("officials") or []:
+            conn.execute("insert or ignore into game_officials(game_id, name) values (?,?)", (g["game_id"], name))
         if parsed.get("odds", {}).get("home_ml") is not None:
             db.meta_set(conn, f"odds:{g['game_id']}", json.dumps(parsed["odds"]))
 
@@ -139,3 +141,21 @@ def backfill(conn, client, season: int, today: str) -> CollectResult:
         total.warnings += r.warnings
         total.pending += r.pending
     return total
+
+
+def backfill_officials(conn, season: int) -> int:
+    """Officials for stored games that have none, from hoopR (ESPN summaries carry them for new games)."""
+    import pandas as pd
+    missing = {r[0] for r in conn.execute("""select g.game_id from games g where g.season=? and g.source is not null
+                                             and g.game_id not in (select game_id from game_officials)""", (season,))}
+    if not missing:
+        return 0
+    d = pd.read_parquet(f"{fallback.BASE}/officials/parquet/officials_{season}.parquet")
+    n = 0
+    with db.tx(conn):
+        for r in d.itertuples():
+            gid = str(r.game_id)
+            if gid in missing and r.official_display_name:
+                conn.execute("insert or ignore into game_officials(game_id, name) values (?,?)", (gid, r.official_display_name))
+                n += 1
+    return n

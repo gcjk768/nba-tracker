@@ -296,23 +296,57 @@ def predict_tonight(ctx, st, us_date, why="daily"):
             if g["status"] == "scheduled":
                 collector.upsert_schedule_row(ctx.conn, g)
         odds = espn.scoreboard_odds(sb)
+        ts = ctx.now_sgt().astimezone(UTC).isoformat(timespec="minutes")
+        with db.tx(ctx.conn):
+            for gid, o in odds.items():
+                db.upsert(ctx.conn, "odds_snap", {"game_id": gid, "ts": ts, "home_ml_open": o.get("home_ml_open"), "home_ml": o.get("home_ml"),
+                                                  "away_ml_open": o.get("away_ml_open"), "away_ml": o.get("away_ml"),
+                                                  "spread_open": o.get("spread_open"), "spread": o.get("spread"), "total": o.get("total")})
     except Exception as e:
         log.warning("odds fetch failed: %s", e)
+    from . import insights
     pctx = {"params": st["params"], "ratings": st["ratings"], "values": st["values"], "injuries": st["injuries"],
-            "elo": elo_now(ctx), "odds": odds}
+            "elo": elo_now(ctx), "odds": odds, "sched": insights.schedule_context(ctx.conn, ctx.s.espn_season)}
     preds = P.predict_slate(ctx.conn, us_date, pctx, why=why, now=ctx.now_sgt().astimezone(UTC))
     return preds
+
+
+def _flags(ctx, g, sched):
+    from . import insights as ins
+    out = []
+    for t in (g["away"], g["home"]):
+        c = sched.get((g["game_id"], t)) or {}
+        f = []
+        if c.get("b2b"):
+            f.append("back-to-back")
+        elif c.get("three_in_four"):
+            f.append("3 in 4 nights")
+        if c.get("road_trip", 0) >= 4:
+            f.append(f"road game {c['road_trip']}")
+        if abs(c.get("tz") or 0) >= 2:
+            f.append(f"{abs(c['tz'])} time zones")
+        if f:
+            out.append(f"{t} " + ", ".join(f))
+    lm = ins.line_move(ctx.conn, g["game_id"])
+    if lm and abs(lm["move"]) >= 0.03:
+        out.append(f"line moved to {g['home'] if lm['move'] > 0 else g['away']} +{abs(100 * lm['move']):.0f}")
+    return "; ".join(out)
 
 
 def slate_view(ctx, us_date):
     """Latest stored prediction for every game on a US date (for the digest and /game today)."""
     out = []
+    try:
+        from . import insights as ins
+        sched = ins.schedule_context(ctx.conn, ctx.s.espn_season)
+    except Exception:
+        sched = {}
     for g in ctx.conn.execute("select * from games where date=? order by tip_utc", (us_date,)):
         p = P.latest(ctx.conn, g["game_id"])
         if p:
             out.append({"game_id": g["game_id"], "home": g["home"], "away": g["away"], "home_wp": p["home_wp"],
                         "market_wp": p["market_wp"], "margin": p["margin"], "total": p["total"],
-                        "tip_sgt": tip_sgt(g["tip_utc"]), "status": g["status"]})
+                        "tip_sgt": tip_sgt(g["tip_utc"]), "status": g["status"], "flags": _flags(ctx, g, sched)})
     return out
 
 
@@ -339,6 +373,10 @@ def _daily(ctx, key):
         res.pending += more.pending
         warnings += res.warnings + more.warnings
         refresh_futures(ctx, today)
+        try:
+            collector.backfill_officials(conn, s.espn_season)
+        except Exception as e:
+            log.warning("officials backfill failed: %s", e)
         try:                                       # price tonight with today's injury list (first run seeds silently)
             inj_mod.snapshot(conn, espn.parse_injuries(ctx.client.injuries()))
         except Exception as e:
@@ -478,8 +516,17 @@ def build_digest(ctx, today, games, briefs, aar, tune_rep, st, sim, prev_sim, ve
             fav = g["home"] if p["home_wp"] >= 0.5 else g["away"]
             pick = f" · pick {fav} {max(p['home_wp'], 1 - p['home_wp']):.0%}"
         top = b["top_players"][0] if b["top_players"] else None
+        won = ""
+        try:
+            from . import insights as ins
+            rec = ins.game_recipe(ctx.conn, g["game_id"])
+            w = g["home"] if g["home_pts"] > g["away_pts"] else g["away"]
+            top2 = sorted(((k, v) for k, v in (rec.get(w) or {}).items() if k != "other" and v > 0), key=lambda x: -x[1])[:2]
+            won = f"{w} won on " + ", ".join(f"{k} {v:+.0f}" for k, v in top2) if top2 else ""
+        except Exception as e:
+            log.warning("win recipe failed: %s", e)
         res.append({"matchup": b["matchup"], "score": b["score"], "ot": g["ot"], "pick_right": right,
-                    "stats_line": stats + pick, "top_line": f"{top['name']} {top['line']}" if top else ""})
+                    "stats_line": stats + pick, "top_line": f"{top['name']} {top['line']}" if top else "", "won_line": won})
     impact = [{"label": b["matchup"], "best": b["wpa_best"], "worst": b["wpa_worst"]} for _, b in ranked if b["wpa_best"]]
     since = (ctx.now_sgt() - timedelta(hours=24)).astimezone(UTC).isoformat(timespec="seconds")
     status = [c for c in inj_mod.recent_changes(ctx.conn, since) if c["player_id"] in st["values"]

@@ -5,6 +5,15 @@ updated: 2026-11-09
 # Changelog
 
 ## 2026-11-09
+- "What decides games" (the owner picked all ten ideas): `nba/insights.py` (exact win-recipe split of every margin into
+  shooting / turnovers / offensive rebounds / free throws; shot quality = expected pts per shot from type + zone vs
+  actual, offense and defense luck; rest and travel per game from the schedule and arena coordinates; clutch; quarter
+  margins; halftime shot-mix shift; points off turnovers / fast break / paint; referee crews (officials from ESPN +
+  hoopR backfill); betting-line movement from opening vs current lines stored in `odds_snap`), `nba/lineups.py`
+  (5-man units from substitutions, 97% of game time covered, on/off, closing five, bench units, with/without stars).
+  Dashboard: new section + tonight card context + "won on" and refs for last night + drawer sections. Telegram:
+  "won on" per result, rest / line-move flags on tonight's picks. Rest and travel were added to the model grid and
+  backtested on 2017-2021: the tuner kept both at 0 (no out-of-sample gain beyond back-to-backs), so they stay display-only.
 - Telegram digest: "Matchup keys" for tonight's games (each side's best way to win = the opponent's top measured
   weakness + the plays that attack it; never dropped, splits into a 2nd message on busy nights), dashboard link
   (`DASHBOARD_URL`), `/help` links the dashboard, `/team` has "How to beat them". Cleared the job_runs row left by the

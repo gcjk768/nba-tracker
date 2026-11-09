@@ -119,6 +119,7 @@ section.block { padding: 34px 0 6px; }
 .split { display: flex; height: 8px; border-radius: 99px; overflow: hidden; margin: 14px 0 10px; gap: 2px; background: var(--line); }
 .split span { display: block; height: 100%; width: 50%; transition: width 1.1s var(--ease); }
 .match .foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-3); }
+.match .ctx { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line-2); font-size: 12px; color: var(--ink-2); }
 .edge { color: var(--accent); }
 
 /* last night */
@@ -391,6 +392,14 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
     <div style="overflow-x:auto;margin-top:18px"><table class="styles" id="styles"></table></div>
   </section>
 
+  <section class="block reveal" id="s-dec">
+    <div class="sh"><div><h2>What decides games</h2><p>What the winning side has had over the loser this season, per game, and each team's numbers. Tap a column to sort, a team to open it.</p></div>
+      <div class="seg" id="decSeg" role="group" aria-label="Conference"><button data-cf="All" aria-pressed="true">All</button><button data-cf="East" aria-pressed="false">East</button><button data-cf="West" aria-pressed="false">West</button></div></div>
+    <div class="two"><div><h4 class="ink2" style="margin:0 0 8px;font-size:13px">Average edge of the winning team (points per game)</h4><div id="decEdge"></div></div>
+      <div class="muted" style="font-size:12px" id="decNote"></div></div>
+    <div style="overflow-x:auto;margin-top:16px"><table class="styles" id="decTable"></table></div>
+  </section>
+
   <section class="block reveal" id="s-pb">
     <div class="sh"><div><h2>Team playbooks</h2><p id="pbSub"></p></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -523,6 +532,21 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
 })();
 
 // ---------- tonight ----------
+function ctxLine(p) {
+  const C = (D.tonight_ctx || {})[p.game_id]; if (!C) return "";
+  const desc = (t, c) => { const f = [];
+    if (c.b2b) f.push("2nd night of back-to-back"); else if (c.rest != null && c.rest >= 2) f.push(`${c.rest} days rest`);
+    if (c.three_in_four && !c.b2b) f.push("3 games in 4 nights");
+    if (c.road_trip >= 3) f.push(`road game ${c.road_trip} in a row`);
+    if (c.km >= 1500) f.push(`${c.km.toLocaleString()} km trip`);
+    if (Math.abs(c.tz || 0) >= 2) f.push(`${Math.abs(c.tz)} time zones`);
+    if (c.altitude) f.push("altitude");
+    return f.length ? `<b>${esc(t)}</b> ${esc(f.join(", "))}` : ""; };
+  const parts = [desc(p.away, C.away || {}), desc(p.home, C.home || {})].filter(Boolean);
+  const L = C.line;
+  if (L && Math.abs(L.move) >= 0.02) parts.push(`market moved <b>${esc(L.move > 0 ? p.home : p.away)}</b> +${Math.abs(100 * L.move).toFixed(0)} since open`);
+  return parts.length ? `<div class="ctx">${parts.join(" · ")}</div>` : "";
+}
 (function tonight() {
   const g = D.tonight, box = $("games");
   $("tonightSub").textContent = g.length ? `${g.length} game${g.length > 1 ? "s" : ""}, tip times in Singapore time. Orange = the model and the market disagree by 8 points or more.`
@@ -539,7 +563,7 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
         <div class="side ${hw >= aw ? "lean" : ""}">${logo(p.home, "md")}<span>${esc(p.home)}</span><span class="p num">${pct(hw)}</span></div>
       </div>
       <div class="split" data-hw="${hw}"><span data-tc="${esc(p.away)}"></span><span data-tc="${esc(p.home)}"></span></div>
-      <div class="foot"><span>${esc(p.tip_sgt)}</span><span>${note}</span></div></article>`;
+      <div class="foot"><span>${esc(p.tip_sgt)}</span><span>${note}</span></div>${ctxLine(p)}</article>`;
   }).join("");
   box.querySelectorAll("[data-tc]").forEach(e => e.style.background = teamColor(e.dataset.tc));
   const grow = () => box.querySelectorAll(".split").forEach(s => { const hw = +s.dataset.hw;
@@ -561,7 +585,9 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
         ${D.spoiler ? `<button data-k="${k}" class="rv">Show score</button>` : ""}</div>
       <div class="why">${esc(g.reasons.length ? g.reasons.join(", ") : "routine game")}</div>
       <div class="res"><span class="s num">${esc(g.away)} ${g.away_pts} : ${g.home_pts} ${esc(g.home)}${g.ot ? " (OT)" : ""}</span>
-        <span>${esc(g.top)}</span>${pick}</div></article>`;
+        <span>${esc(g.top)}</span>${pick}
+        ${g.recipe && g.recipe.text ? `<span>${esc(g.recipe.winner)} won on ${esc(g.recipe.text)}</span>` : ""}
+        ${g.crew ? `<span class="muted">Refs: ${esc(g.crew.names.join(", "))}${g.crew.fta_vs_lg != null ? ` (crew averages ${g.crew.fta_vs_lg > 0 ? "+" : ""}${g.crew.fta_vs_lg} free throws a game vs league)` : ""}</span>` : ""}</div></article>`;
   }).join("");
   box.querySelectorAll(".rv").forEach(b => b.onclick = () => { const a = $("ng" + b.dataset.k); a.classList.toggle("open"); b.textContent = a.classList.contains("open") ? "Hide score" : "Show score"; });
   if (!D.spoiler) $("revealAll").hidden = true;
@@ -715,6 +741,44 @@ document.addEventListener("click", e => { const b = e.target.closest("[data-play
       <div class="row3"><span class="lab">Teams who play it</span><div class="chips" style="margin:0">${(ev.teams || []).map(t => `<span class="sc" data-open="${esc(t)}">${logo(t, "sm")} ${esc(t)}</span>`).join("") || `<span class="muted">none yet</span>`}</div></div>
     </article>`;
   }).join("");
+})();
+
+// ---------- what decides games ----------
+(function decidesSection() {
+  const Dd = D.decides, box = $("decTable");
+  if (!Dd || !Dd.rows.length) { $("s-dec").hidden = true; return; }
+  const E = Dd.edge || {}, emax = Math.max(1, ...Object.values(E).map(Math.abs));
+  $("decEdge").innerHTML = Object.entries(E).filter(([k]) => k !== "other").sort((a, b) => b[1] - a[1]).map(([k, v]) => `
+    <div class="mx"><span>${esc(k)}</span><span class="tr"><span class="f" data-w="${100 * Math.abs(v) / emax}" style="background:var(--accent)"></span></span>
+    <span class="num">${v > 0 ? "+" : ""}${v.toFixed(1)}</span><span></span></div>`).join("");
+  const sg = (v, d = 1) => v == null ? "" : `<span class="${v >= 0 ? "up" : "down"}">${v > 0 ? "+" : ""}${Number(v).toFixed(d)}</span>`;
+  const cols = [
+    ["Team", r => r.team, true, r => `<span data-open="${esc(r.team)}" style="display:inline-flex;gap:6px;align-items:center;cursor:pointer">${logo(r.team, "sm")}<b>${esc(r.team)}</b></span>`],
+    ["Shooting", r => r.recipe.shooting, false, r => sg(r.recipe.shooting)], ["TOV", r => r.recipe.turnovers, false, r => sg(r.recipe.turnovers)],
+    ["Boards", r => r.recipe["off. rebounds"], false, r => sg(r.recipe["off. rebounds"])], ["FT", r => r.recipe["free throws"], false, r => sg(r.recipe["free throws"])],
+    ["Shot-making", r => r.making, false, r => sg(r.making, 3)], ["Opp. luck", r => -r.d_luck, false, r => sg(-r.d_luck, 3)],
+    ["Clutch", r => (r.clutch || {}).net_per_game ?? -99, false, r => r.clutch && r.clutch.games ? `${esc(r.clutch.record)} ${sg(r.clutch.net_per_game)}` : ""],
+    ["Q1", r => r.quarters.Q1 ?? -99, false, r => sg(r.quarters.Q1)], ["Q2", r => r.quarters.Q2 ?? -99, false, r => sg(r.quarters.Q2)],
+    ["Q3", r => r.quarters.Q3 ?? -99, false, r => sg(r.quarters.Q3)], ["Q4", r => r.quarters.Q4 ?? -99, false, r => sg(r.quarters.Q4)],
+    ["B2B", r => r.b2b ? r.b2b.avg_margin : -99, false, r => r.b2b ? `${esc(r.b2b.record)} ${sg(r.b2b.avg_margin)}` : ""],
+    ["Bench net", r => r.bench_net ?? -99, false, r => sg(r.bench_net)],
+    ["Pts off TO", r => r.pts_off_to_diff, false, r => sg(r.pts_off_to_diff)], ["Fast break", r => r.fastbreak_diff, false, r => sg(r.fastbreak_diff)],
+    ["2nd-half shift", r => r.half_shift ?? 0, false, r => r.half_shift == null ? "" : `${Math.round(100 * r.half_shift)}% <span class="muted">${esc(r.half_leans || "")}</span>`]];
+  let sortK = 1, asc = false, cf = "All";
+  function draw() {
+    const f = cols[sortK][1];
+    const rows = Dd.rows.filter(r => cf === "All" || r.conf === cf).sort((a, b) => { const x = f(a), y = f(b); return (x > y ? 1 : x < y ? -1 : 0) * (asc ? 1 : -1); });
+    box.innerHTML = `<thead><tr>${cols.map(([n], i) => `<th data-i="${i}" tabindex="0" ${i === sortK ? `aria-sort="${asc ? "ascending" : "descending"}"` : ""}>${n}${i === sortK ? (asc ? " ↑" : " ↓") : ""}</th>`).join("")}</tr></thead><tbody>` +
+      rows.map(r => `<tr>${cols.map(c => `<td class="num">${c[3](r)}</td>`).join("")}</tr>`).join("") + "</tbody>";
+    box.querySelectorAll("th").forEach(th => { const go = () => { const i = +th.dataset.i; asc = sortK === i ? !asc : cols[i][2]; sortK = i; draw(); };
+      th.onclick = go; th.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } }; });
+  }
+  draw();
+  document.querySelectorAll("#decSeg button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#decSeg button").forEach(x => x.setAttribute("aria-pressed", x === b)); cf = b.dataset.cf; draw(); });
+  new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { o.disconnect(); $("decEdge").querySelectorAll(".f").forEach(x => x.style.width = x.dataset.w + "%"); } }, {threshold: .1}).observe($("decEdge"));
+  const cov = Dd.lineup_coverage;
+  $("decNote").textContent = `Win recipe = average points per game each factor adds to the margin (shooting, turnovers, offensive rebounds, free throws; it sums to the real margin). Shot-making = points per shot above what the shot types and zones usually yield. Opp. luck = how far opponents shoot below expectation against them (positive = lucky). Lineups rebuilt from substitutions, ${cov ? Math.round(100 * cov.share_kept) : "?"}% of game time covered.`;
 })();
 
 // ---------- standings by conference ----------
@@ -956,6 +1020,32 @@ async function openTeam(team, player) {
         <div class="ev">${esc(w.evidence)}. ${esc(w.why)}</div>${w.note ? `<div class="ev muted">${esc(w.note)}</div>` : ""}
         <div class="ev"><b>${esc(w.exploit)}</b> ${(w.plays || []).map(x => `<button class="sc rep" data-play="${esc(x)}" style="margin:2px 2px 0 0">${esc(x)}</button>`).join("")}</div></div>`).join("")}</div>`
         : `<p class="muted" style="font-size:13px">No clear weakness in the numbers yet.</p>`}</div>
+    ${(() => { const X = T.decides; if (!X) return "";
+      const rc = X.recipe || {}, E = X.edge || {}, L = X.lineups || {}, CQ = X.clutch_quarters || {}, SQ = X.shot_quality || {};
+      const sg = (v, d = 1) => v == null ? "n/a" : `<span class="${v >= 0 ? "up" : "down"}">${v > 0 ? "+" : ""}${Number(v).toFixed(d)}</span>`;
+      const fac = ["shooting", "turnovers", "off. rebounds", "free throws"];
+      const recipe = `<table><thead><tr><th>Factor (pts per game)</th><th class="r">In wins</th><th class="r">In losses</th><th class="r">All games</th><th class="r">League winners</th></tr></thead><tbody>${fac.map(f =>
+        `<tr><td>${esc(f)}</td><td class="r num">${sg((rc.wins || {})[f])}</td><td class="r num">${sg((rc.losses || {})[f])}</td><td class="r num">${sg((rc.all || {})[f])}</td><td class="r num muted">${sg(E[f])}</td></tr>`).join("")}</tbody></table>`;
+      const units = (L.units || []).map(u => `<tr><td>${esc(u.players.join(", "))}</td><td class="r num">${u.min}</td><td class="r num">${sg(u.net)}</td><td class="r num ${u.noise ? "muted" : ""}">${u.poss}${u.noise ? " (noise)" : ""}</td></tr>`).join("");
+      const onoff = (L.on_off || []).slice(0, 10).map(o => `<tr><td>${esc(o.name)}</td><td class="r num">${sg(o.on)}</td><td class="r num">${sg(o.off)}</td><td class="r num">${sg(o.diff)}</td><td class="r num muted">${o.on_poss}</td></tr>`).join("");
+      const ww = (L.with_without || []).map(w => `<div class="ev"><b>${esc(w.player)}</b>: with ${w.with ? esc(w.with.record) + " (" + (w.with.avg_margin > 0 ? "+" : "") + w.with.avg_margin + ")" : "n/a"} · without ${w.without ? esc(w.without.record) + " (" + (w.without.avg_margin > 0 ? "+" : "") + w.without.avg_margin + ")" : "never missed"}</div>`).join("");
+      const cl = CQ.clutch, q = CQ.quarters || {}, rs = X.rest || {}, bx = X.box || {}, hf = X.half;
+      return `<div class="dsec"><h3>What decides their games</h3><p>Where their margin comes from (exact split of the score), compared with what separates winners league-wide.</p>${recipe}
+        <div class="muted" style="font-size:12px;margin-top:8px">Shot quality: expected ${(SQ.x_pps || 0).toFixed(2)} pts/shot, actual ${(SQ.pps || 0).toFixed(2)} (shot-making ${sg(SQ.making, 3)}).
+          Opponents: expected ${(SQ.d_x_pps || 0).toFixed(2)}, actual ${(SQ.d_pps || 0).toFixed(2)} (${(SQ.d_luck || 0) < 0 ? "defense has been lucky" : "opponents hot against them"} ${sg(-(SQ.d_luck || 0), 3)}).</div>
+        ${(X.players_making || []).length ? `<div class="muted" style="font-size:12px;margin-top:6px">Shot-making by player (pts/shot above expected): ${X.players_making.map(p => `${esc(p.name)} ${p.making > 0 ? "+" : ""}${p.making.toFixed(2)}`).join(" · ")}</div>` : ""}</div>
+      <div class="dsec"><h3>Lineups</h3><p>Rebuilt from substitutions (${X.coverage ? Math.round(100 * X.coverage.share_kept) : "?"}% of game time covered). Net is points per 100 possessions; under 100 possessions is noise.</p>
+        <table><thead><tr><th>Most-used five</th><th class="r">Min</th><th class="r">Net</th><th class="r">Poss</th></tr></thead><tbody>${units}</tbody></table>
+        <div class="ev" style="margin-top:10px"><b>Closing lineup</b> (most clutch minutes): ${L.closing ? esc(L.closing.players.join(", ")) + ` · ${L.closing.clutch_min} min` : "none yet"}</div>
+        <div class="ev"><b>Bench units</b> (3+ reserves): ${L.bench ? `${Math.round(100 * (L.bench.min_share || 0))}% of minutes, net ${L.bench.net == null ? "n/a" : (L.bench.net > 0 ? "+" : "") + L.bench.net}` : "n/a"}</div>
+        ${ww}
+        <table style="margin-top:10px"><thead><tr><th>Player</th><th class="r">On</th><th class="r">Off</th><th class="r">On-off</th><th class="r">Poss on</th></tr></thead><tbody>${onoff}</tbody></table></div>
+      <div class="dsec"><h3>Clutch, quarters, rest</h3>
+        <div class="ev">Clutch (last 5 min, within 5): ${cl ? `${esc(cl.record)} in ${cl.games} games, ${sg(cl.net_per_game)} per game, FT ${cl.ft_pct == null ? "n/a" : Math.round(100 * cl.ft_pct) + "%"} on ${cl.fta}` : "no clutch games yet"} <span class="muted">(mostly noise)</span></div>
+        <div class="ev">Quarter margins: ${Object.entries(q).map(([k, v]) => `${k} ${sg(v)}`).join(" · ") || "n/a"}</div>
+        <div class="ev">After halftime: ${hf ? `${Math.round(100 * hf.shift)}% of their shot mix changes, leaning into ${esc(hf.leans_into)} (+${hf.leans_into_pp} pts)` : "n/a"}</div>
+        <div class="ev">Rest: ${Object.entries(rs).map(([k, v]) => `${esc(k)} ${esc(v.record)} (${v.avg_margin > 0 ? "+" : ""}${v.avg_margin})`).join(" · ") || "n/a"}</div>
+        <div class="ev">Per game: points off turnovers ${bx.pts_off_to ?? "n/a"} vs ${bx.opp_pts_off_to ?? "n/a"} · fast break ${bx.fastbreak ?? "n/a"} vs ${bx.opp_fastbreak ?? "n/a"} · paint ${bx.paint ?? "n/a"} vs ${bx.opp_paint ?? "n/a"}</div></div>`; })()}
     <div class="dsec"><h3>How they play on offense</h3><p>Measured from ESPN play-by-play. Bars are this team, the tick is the league average.</p>${lab("offense")}<div style="margin-top:14px">${off}</div></div>
     <div class="dsec"><h3>How they defend</h3><p>What opponents shoot against them, measured the same way.</p>
       ${d ? `<p style="font-size:14px;margin:0 0 12px">Opponents score <b class="num">${d.pps.toFixed(2)}</b> points per shot against them, ${ordinal(Math.round(1 + (T.pct_def.pps ?? 50) * 29 / 100))} best of 30. Defensive rating ${R.def > 0 ? "+" : ""}${R.def ?? "?"} per 100 vs average.</p>` : ""}

@@ -80,7 +80,7 @@ def shots(conn, season, before=None) -> list[dict]:
         gain.pop(team, None)
         blk = _BLK.search(text)
         made = " makes " in text
-        out.append({"game_id": r["game_id"], "date": r["date"], "team": team, "opp": opp, "player_id": r["player_id"],
+        out.append({"game_id": r["game_id"], "date": r["date"], "team": team, "opp": opp, "player_id": r["player_id"], "period": r["period"],
                     "kind": k, "zone": zone_of(text, r["x"], r["y"], three), "three": three, "made": made,
                     "pts": (3 if three else 2) if made else 0, "assisted": assisted, "transition": trans,
                     "assister": _AST.search(text).group(1).strip() if assisted else None,

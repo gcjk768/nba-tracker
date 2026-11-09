@@ -63,6 +63,8 @@ def results(games: list[dict], sp: Spoiler, short=False) -> str:
             lines.append("   " + sp(e(g["stats_line"])))
         if g.get("top_line"):
             lines.append("   👤 " + sp(e(g["top_line"])))
+        if g.get("won_line"):
+            lines.append("   ⚖️ " + sp(e(g["won_line"])))
     return "\n".join(lines)
 
 
@@ -129,6 +131,8 @@ def tonight_block(preds: list[dict]) -> str:
         fav, wp = (p["home"], p["home_wp"]) if p["home_wp"] >= 0.5 else (p["away"], 1 - p["home_wp"])
         mk = f" · mkt {pct(p['market_wp'] if fav == p['home'] else 1 - p['market_wp'])}" if p.get("market_wp") is not None else ""
         lines.append(f"<b>{e(p['away'])} @ {e(p['home'])}</b> · {e(fav)} {pct(wp)}{mk} · <i>{e(p.get('tip_sgt', ''))}</i>")
+        if p.get("flags"):
+            lines.append(f"   ⚠️ <i>{e(p['flags'])}</i>")
     return "\n".join(lines)
 
 

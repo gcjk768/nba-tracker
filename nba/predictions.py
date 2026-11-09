@@ -15,14 +15,16 @@ def win_prob(margin, sigma):
     return 0.5 * (1 + math.erf(margin / (sigma * math.sqrt(2))))
 
 
-def project(rh: dict, ra: dict, mu: float, p, neutral=False, b2b_h=False, b2b_a=False, avail_h=0.0, avail_a=0.0):
+def project(rh: dict, ra: dict, mu: float, p, neutral=False, b2b_h=False, b2b_a=False, avail_h=0.0, avail_a=0.0,
+            rest_edge=0.0, tz_edge=0.0):
     pace = (rh["pace"] + ra["pace"]) / 2
     base = (rh["net"] - ra["net"]) * pace / 100
     hca = 0.0 if neutral else p.hca
     b2b = -p.b2b * b2b_h + p.b2b * b2b_a
-    margin = base + hca + b2b + (avail_h - avail_a)
+    rt = getattr(p, "rest", 0.0) * rest_edge + getattr(p, "travel", 0.0) * tz_edge
+    margin = base + hca + b2b + (avail_h - avail_a) + rt
     total = pace * ((mu + rh["off"] - ra["def"]) + (mu + ra["off"] - rh["def"])) / 100
-    parts = {"base": round(base, 3), "hca": hca, "b2b": b2b,
+    parts = {"base": round(base, 3), "hca": hca, "b2b": b2b, "rest_travel": round(rt, 3),
              "avail_raw": round((avail_h - avail_a) / p.injury_scale, 3) if p.injury_scale else 0.0}
     return {"margin": margin, "home_wp": win_prob(margin, p.sigma), "total": total, "parts": parts}
 
@@ -103,7 +105,11 @@ def predict_slate(conn, d: str, ctx, why="", now=None) -> list[dict]:
             continue
         av_h = rmod.availability_delta(h, ctx["values"], ctx["injuries"])
         av_a = rmod.availability_delta(a, ctx["values"], ctx["injuries"])
-        pr = project(R[h], R[a], R["_mu"], p, bool(g["neutral"]), b2b(conn, h, d), b2b(conn, a, d), av_h, av_a)
+        sc = ctx.get("sched", {})
+        ch, ca = sc.get((g["game_id"], h)) or {}, sc.get((g["game_id"], a)) or {}
+        rest_edge = max(-2, min(2, min(3, ch.get("rest") if ch.get("rest") is not None else 2) - min(3, ca.get("rest") if ca.get("rest") is not None else 2)))
+        tz_edge = abs(ca.get("tz") or 0) - abs(ch.get("tz") or 0)
+        pr = project(R[h], R[a], R["_mu"], p, bool(g["neutral"]), b2b(conn, h, d), b2b(conn, a, d), av_h, av_a, rest_edge, tz_edge)
         el = ctx.get("elo", {})
         pr["elo_wp"] = elo_mod.prob(el.get(h, 1505), el.get(a, 1505), bool(g["neutral"])) if el else None
         o = ctx.get("odds", {}).get(g["game_id"]) or {}

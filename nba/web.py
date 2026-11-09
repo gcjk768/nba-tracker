@@ -89,7 +89,8 @@ def data(ctx) -> dict:
                       "pick": None if not p else (g["home"] if p["home_wp"] >= 0.5 else g["away"]),
                       "pick_wp": None if not p else round(max(p["home_wp"], 1 - p["home_wp"]), 3),
                       "pick_right": None if not p else (p["home_wp"] >= 0.5) == (g["home_pts"] > g["away_pts"]),
-                      "top": f"{top['name']} {top['pts']}p {top['reb']}r {top['ast']}a" if top else ""})
+                      "top": f"{top['name']} {top['pts']}p {top['reb']}r {top['ast']}a" if top else "",
+                      "recipe": _recipe_line(c, g), "crew": _crew(ctx, g["game_id"])})
     games.sort(key=lambda x: -x["excitement"])
     sc = scorecard.grade(c)
     injuries, values = player_inputs(ctx)
@@ -108,10 +109,12 @@ def data(ctx) -> dict:
             "select max(finished) from job_runs where status='done'").fetchone()[0], "spoiler": ctx.s.spoiler,
         "title": {"dates": dates, "teams": {t: [round(series[t].get(d, 0), 4) for d in dates] for t in ever_top},
                   "market": {t: round(v, 4) for t, v in mkt.items()}, "latest": latest},
+        "tonight_ctx": {g["game_id"]: game_context(ctx, g) for g in jobs.slate_view(ctx, today)},
         "rankings": rankings, "status": status[:40],
         "styles": styles,
         "playbooks": playbooks(ctx, styles),
         "kb": kb_payload(ctx),
+        "decides": decides(ctx),
         "ato_league": {k: v for k, v in ato_profiles(ctx).get("_league", {}).items()},
         "what_wins": schemes.what_wins(styles), "tonight": jobs.slate_view(ctx, today), "last_night": {"date": last_night, "games": games},
         "scorecard": {k: sc.get(k) for k in ("n", "wins", "acc", "brier", "logloss", "elo_brier", "elo_acc", "mkt_brier",
@@ -220,6 +223,51 @@ def kb_payload(ctx) -> dict:
             "counters": counters, "videos": social_intel.video_map(c), "league_pps": ev.get("_league_pps")}
 
 
+def insights_all(ctx) -> dict:
+    """League + per-team 'what decides games' numbers, cached until new games arrive."""
+    from . import insights as ins, lineups
+    k = ("ins", _key(ctx.conn))
+    if k in _CACHE:
+        return _CACHE[k]
+    c, season = ctx.conn, ctx.s.espn_season
+    S = schemes.shots(c, season)
+    names = {r[0]: r[1] for r in c.execute("select player_id, max(name) from player_box group by player_id")}
+    sched = ins.schedule_context(c, season)
+    out = {"recipe": ins.win_recipe(c, season), "sq": ins.shot_quality(S), "sched": sched, "rest": ins.rest_splits(c, season, sched),
+           "cq": ins.clutch_and_quarters(c, season), "half": ins.halftime_shift(S), "box": ins.box_extras(ins._game_rows(c, season)),
+           "refs": ins.referees(c, season), "lineups": lineups.team_lineups(c, season, names), "names": names}
+    _CACHE[k] = out
+    return out
+
+
+def decides(ctx) -> dict:
+    """Main-page 'What decides games': league winner edge + one row per team."""
+    I = insights_all(ctx)
+    rows = []
+    for t in sorted(espn.TEAM_IDS):
+        rc, sq, cq, rs = I["recipe"].get(t, {}), I["sq"].get(t, {}), I["cq"].get(t, {}), I["rest"].get(t, {})
+        lu, bx, hf = I["lineups"].get(t, {}), I["box"].get(t, {}), I["half"].get(t, {})
+        rows.append({"team": t, "conf": "East" if t in espn.EAST else "West", "recipe": rc.get("all", {}), "recipe_wins": rc.get("wins", {}),
+                     "making": round(sq.get("making", 0), 3), "d_luck": round(sq.get("d_luck", 0), 3), "x_pps": round(sq.get("x_pps", 0), 3),
+                     "clutch": (cq.get("clutch") or {}), "quarters": cq.get("quarters", {}),
+                     "b2b": rs.get("back-to-back"), "rested": rs.get("2+ days rest"),
+                     "bench_net": (lu.get("bench") or {}).get("net"), "bench_share": (lu.get("bench") or {}).get("min_share"),
+                     "pts_off_to_diff": round(bx.get("pts_off_to", 0) - bx.get("opp_pts_off_to", 0), 1),
+                     "fastbreak_diff": round(bx.get("fastbreak", 0) - bx.get("opp_fastbreak", 0), 1),
+                     "half_shift": hf.get("shift"), "half_leans": hf.get("leans_into")})
+    return {"edge": I["recipe"].get("_league", {}).get("winner_edge", {}), "rows": rows,
+            "lineup_coverage": I["lineups"].get("_coverage"), "refs_league": I["refs"].get("_league")}
+
+
+def game_context(ctx, g: dict) -> dict:
+    """Tonight's game: rest / travel / altitude for each side, betting line movement."""
+    from . import insights as ins
+    I = insights_all(ctx)
+    sc = I["sched"]
+    side = lambda t: sc.get((g["game_id"], t)) or {}
+    return {"home": side(g["home"]), "away": side(g["away"]), "line": ins.line_move(ctx.conn, g["game_id"])}
+
+
 def player_inputs(ctx):
     st_values = ratings.player_values(ratings.player_frame(ctx.conn, ctx.s.espn_season),
                                       ratings.games_played(ratings.game_frame(ctx.conn, ctx.s.espn_season)), tuning.current(ctx.conn).injury_scale)
@@ -260,7 +308,21 @@ def team_data(ctx, team: str) -> dict | None:
             "film": _film(c, team, prof.get("labels", [])),
             "ato": ato_profiles(ctx).get(team), "ato_league": ato_profiles(ctx).get("_league"),
             "weaknesses": weaknesses_all(ctx).get(team, []),
+            "decides": _team_decides(ctx, team),
             "recent": recent, "upcoming": upcoming, "kinds": list(schemes.KINDS), "zones": list(schemes.ZONES)}
+
+
+def _team_decides(ctx, team):
+    I = insights_all(ctx)
+    lu = I["lineups"].get(team, {})
+    sq = I["sq"].get(team, {})
+    top_makers = sorted(((I["names"].get(pid, pid), v) for pid, v in I["sq"]["_players"].items() if v["team"] == team),
+                        key=lambda x: -x[1]["shots"])[:6]
+    return {"recipe": I["recipe"].get(team), "edge": I["recipe"].get("_league", {}).get("winner_edge"),
+            "shot_quality": {k: round(v, 3) for k, v in sq.items() if isinstance(v, float)},
+            "players_making": [{"name": n, "shots": v["shots"], "making": round(v["making"], 3), "x_pps": round(v["x_pps"], 3)} for n, v in top_makers],
+            "clutch_quarters": I["cq"].get(team), "half": I["half"].get(team), "rest": I["rest"].get(team), "box": I["box"].get(team),
+            "lineups": lu, "coverage": I["lineups"].get("_coverage")}
 
 
 def _film(c, team, inferred):
@@ -273,6 +335,20 @@ def _film(c, team, inferred):
         r["agrees_with"] = agree.get(r["label"]) if any(l["label"] == agree.get(r["label"]) for l in inferred) else None
         r["contradicts"] = next((x["inferred"] for x in clash if x["url"] == r["url"] and x["label"] == r["label"]), None)
     return pb
+
+
+def _recipe_line(c, g):
+    from . import insights as ins
+    rec = ins.game_recipe(c, g["game_id"])
+    win = g["home"] if g["home_pts"] > g["away_pts"] else g["away"]
+    parts = rec.get(win) or {}
+    top = sorted(((k, v) for k, v in parts.items() if k != "other" and v > 0), key=lambda x: -x[1])[:2]
+    return {"winner": win, "parts": parts, "text": ", ".join(f"{k} {v:+.0f}" for k, v in top)}
+
+
+def _crew(ctx, game_id):
+    from . import insights as ins
+    return ins.crew(ctx.conn, game_id, insights_all(ctx)["refs"])
 
 
 def render(payload: dict) -> str:

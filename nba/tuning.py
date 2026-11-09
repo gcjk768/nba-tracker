@@ -22,6 +22,8 @@ class Params:
     sigma: float = 11.0          # spread of the actual margin around the projection
     b2b: float = 2.0             # points lost on the 2nd night of a back-to-back
     injury_scale: float = 0.5    # box value -> points of margin
+    rest: float = 0.0            # points per day of rest advantage (capped at 2 days); 0 until a backtest shows it helps
+    travel: float = 0.0          # points per time zone crossed since the previous game (away minus home)
 
 
 def current(conn) -> Params:
@@ -41,7 +43,7 @@ def history(conn, n=10):
 
 
 GRID = {"half_life": [None, 45.0, 25.0], "hca": [1.5, 2.0, 2.5, 3.0, 3.5], "sigma": [11.0, 12.0, 13.0, 14.0],
-        "b2b": [0.0, 1.0, 2.0, 3.0]}
+        "b2b": [0.0, 1.0, 2.0, 3.0], "rest": [0.0, 0.5, 1.0], "travel": [0.0, 0.5, 1.0]}
 
 
 def candidates(p: Params):
@@ -51,6 +53,23 @@ def candidates(p: Params):
 
 
 # ---------- walk-forward evaluation ----------
+
+def _rest_travel(df):
+    """Rest days (capped 0..3) and time zones crossed since the previous game, for home and away, from the frame itself."""
+    import pandas as pd
+    from .insights import ARENA
+    d = pd.to_datetime(df.date)
+    last = {}
+    rh, ra, th, ta = [], [], [], []
+    for home, away, x in zip(df.home, df.away, d):
+        for team, R, T in ((home, rh, th), (away, ra, ta)):
+            prev = last.get(team)
+            R.append(min(3, max(0, (x - prev[0]).days - 1)) if prev else 2)
+            T.append(abs(ARENA.get(home, (0, 0, 0))[2] - ARENA.get(prev[1], (0, 0, 0))[2]) if prev else 0)
+        last[home] = (x, home)
+        last[away] = (x, home)
+    return rh, ra, th, ta
+
 
 def _b2b_flags(df):
     import pandas as pd
@@ -68,10 +87,11 @@ def walk_forward_arrays(df, prior, p: "Params", warmup_days=7):
     from . import ratings
     df = df.sort_values("date").reset_index(drop=True)
     bh, ba = _b2b_flags(df)
+    rest_h, rest_a, tz_h, tz_a = _rest_travel(df)
     days = sorted(df.date.unique())
     first = days[0]
     import pandas as pd
-    out = {k: [] for k in ("base", "neutral", "b2b_h", "b2b_a", "y", "margin")}
+    out = {k: [] for k in ("base", "neutral", "b2b_h", "b2b_a", "y", "margin", "rest_edge", "tz_edge")}
     for day in days:
         if (pd.Timestamp(day) - pd.Timestamp(first)).days < warmup_days:
             continue
@@ -83,15 +103,18 @@ def walk_forward_arrays(df, prior, p: "Params", warmup_days=7):
             out["base"].append((rh["net"] - ra["net"]) * (rh["pace"] + ra["pace"]) / 200)
             out["neutral"].append(float(g.get("neutral", 0) or 0))
             out["b2b_h"].append(float(bh[i])); out["b2b_a"].append(float(ba[i]))
+            out["rest_edge"].append(float(max(-2, min(2, rest_h[i] - rest_a[i])))); out["tz_edge"].append(float(tz_a[i] - tz_h[i]))
             m = (g.home_pts_raw - g.away_pts_raw) if "home_pts_raw" in g else (g.home_pts - g.away_pts)
             out["margin"].append(m); out["y"].append(1.0 if m > 0 else 0.0)
     return {k: np.array(v) for k, v in out.items()}
 
 
-def logloss(a, hca, sigma, b2b):
+def logloss(a, hca, sigma, b2b, rest=0.0, travel=0.0):
     import numpy as np
     from scipy.special import ndtr
     m = a["base"] + hca * (1 - a["neutral"]) - b2b * a["b2b_h"] + b2b * a["b2b_a"]
+    if "rest_edge" in a:
+        m = m + rest * a["rest_edge"] + travel * a["tz_edge"]
     pr = np.clip(ndtr(m / sigma), 1e-6, 1 - 1e-6)
     return float(-np.mean(a["y"] * np.log(pr) + (1 - a["y"]) * np.log(1 - pr)))
 
@@ -129,10 +152,10 @@ def tune(conn, df, prior, cur: "Params" = None, min_games=MIN_GAMES) -> dict:
         if hl not in arrays:
             arrays[hl] = walk_forward_arrays(df, prior, replace(cur, half_life=hl))
         return arrays[hl]
-    ll_cur = logloss(arr(cur.half_life), cur.hca, cur.sigma, cur.b2b)
+    ll_cur = logloss(arr(cur.half_life), cur.hca, cur.sigma, cur.b2b, cur.rest, cur.travel)
     best, ll_best = cur, ll_cur
     for c in candidates(cur):
-        ll = logloss(arr(c.half_life), c.hca, c.sigma, c.b2b)
+        ll = logloss(arr(c.half_life), c.hca, c.sigma, c.b2b, c.rest, c.travel)
         if ll < ll_best - 1e-12:
             best, ll_best = c, ll
     report = {"n": int(len(arr(cur.half_life)["y"])), "ll_old": ll_cur, "ll_new": ll_best, "params": asdict(cur)}

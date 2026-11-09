@@ -23,7 +23,7 @@ CHECKPOINTS = ("12-01", "02-15", "04-01")
 
 
 def _metrics(a, p):
-    m = a["base"] + p.hca * (1 - a["neutral"]) - p.b2b * a["b2b_h"] + p.b2b * a["b2b_a"]
+    m = a["base"] + p.hca * (1 - a["neutral"]) - p.b2b * a["b2b_h"] + p.b2b * a["b2b_a"] + p.rest * a["rest_edge"] + p.travel * a["tz_edge"]
     pr = np.clip(ndtr(m / p.sigma), 1e-6, 1 - 1e-6)
     y = a["y"]
     return {"n": int(len(y)), "acc": float(np.mean((pr >= 0.5) == (y == 1))), "brier": float(np.mean((pr - y) ** 2)),

@@ -167,7 +167,15 @@ def scoreboard_odds(j) -> dict:
                 return float(str(v).replace("EVEN", "+100"))
             except (TypeError, ValueError):
                 return None
-        out[str(e["id"])] = {"home_ml": am("home"), "away_ml": am("away"), "total": o.get("overUnder")}
+        def pick(block, side, when, key):
+            v = (((o.get(block) or {}).get(side) or {}).get(when) or {}).get(key)
+            try:
+                return float(str(v).replace("EVEN", "+100"))
+            except (TypeError, ValueError):
+                return None
+        out[str(e["id"])] = {"home_ml": am("home"), "away_ml": am("away"), "total": o.get("overUnder"),
+                             "home_ml_open": pick("moneyline", "home", "open", "odds"), "away_ml_open": pick("moneyline", "away", "open", "odds"),
+                             "spread": pick("pointSpread", "home", "close", "line"), "spread_open": pick("pointSpread", "home", "open", "line")}
     return out
 
 
@@ -261,7 +269,9 @@ def parse_summary(j) -> dict:
     odds = {"spread": pc.get("spread"), "total": pc.get("overUnder"),
             "home_ml": (pc.get("homeTeamOdds") or {}).get("moneyLine"),
             "away_ml": (pc.get("awayTeamOdds") or {}).get("moneyLine")}
-    return {"game": game, "team_box": teams, "player_box": players, "plays": plays, "odds": odds}
+    officials = [o.get("displayName") or o.get("fullName") for o in (j.get("gameInfo") or {}).get("officials") or []]
+    return {"game": game, "team_box": teams, "player_box": players, "plays": plays, "odds": odds,
+            "officials": [o for o in officials if o]}
 
 
 _GAME_STATUS = re.compile(r"\b(doubtful|questionable|probable)\b", re.I)
