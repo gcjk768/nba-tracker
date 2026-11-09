@@ -1,0 +1,9 @@
+httpx==0.28.1
+pandas==3.0.2
+pyarrow==26.0.1
+numpy==2.4.4
+scipy==1.18.1
+pydantic==2.14.1
+python-telegram-bot==22.8
+APScheduler==3.11.3
+tzdata==2026.1

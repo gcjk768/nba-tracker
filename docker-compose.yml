@@ -1,0 +1,46 @@
+# NAS stack (/volume1/docker/nba-tracker). Deploy with ./deploy.sh. Secrets live in ./.env, see env.example.
+services:
+  nba-tracker:
+    build:
+      context: .
+      args:
+        UID: 1000
+    # Dockge Update rebuilds from the code on disk
+    pull_policy: build
+    image: nba-tracker:local
+    container_name: nba-tracker
+    restart: unless-stopped
+    init: true
+    # scrape-net: existing external network (the NAS has no free address pools for a new compose subnet)
+    networks: [scrape-net]
+    env_file: .env
+    environment:
+      # claude -p wrapper first on PATH: prepaid API key first, subscription token as fallback
+      PATH: "/fb:/home/app/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      TZ: Asia/Singapore
+      DATA_DIR: /app/data
+      VAULT_DIR: /vault
+      OBSIDIAN_VAULT_NAME: Obsidian
+      OBSIDIAN_VAULT_PREFIX: NBA Tracker
+      SEASON: "2026-27"
+      ESPN_SEASON: "2027"
+    volumes:
+      - /volume1/docker/claude-fallback:/fb:ro
+      - ./data:/app/data            # SQLite, heartbeat, backtest, Elo archive, Claude CLI config
+      # Obsidian vault: movement log + memory + every note the app writes
+      - "/volume1/<USER>/Obsidian/NBA Tracker:/vault"
+    mem_limit: 2g
+    cpus: 2
+    stop_grace_period: 60s          # lets a running job reach a safe point on SIGTERM
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    # One shot commands on the NAS:
+    #   docker exec nba-tracker python -m nba daily          # run today's digest now (idempotent)
+    #   docker exec nba-tracker python -m nba backtest       # 10-season backtest -> vault Model/Backtest.md
+    #   docker exec nba-tracker python -m nba predict | tune | injury_check | backfill
+networks:
+  scrape-net:
+    external: true
