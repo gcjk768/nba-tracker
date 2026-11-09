@@ -5,6 +5,13 @@ updated: 2026-11-09
 # Changelog
 
 ## 2026-11-09
+- Team playbooks (the owner: "what they normally run at ATO or in every offence and defence"): new "Team playbooks"
+  section, one card per team (East / West filter, sort by net / off / def / ATO rank): offense play-type mix vs league,
+  ATO block, defense lean, named sets. `nba/ato.py` measures after-timeout possessions from pbp (first real possession
+  after a timeout, points until the other team gets the ball; own-timeout share, late-game split, shot look, go-to
+  players; 1,579 possessions league-wide, 1.03 pts each). Team drawer gets an ATO section. Film room gets a second
+  reported source: written scheme articles via Agent Reach web (Exa search + Jina read), 6 teams a night in rotation,
+  `prompts/film_season.md`; extraction now flags ATO sets.
 - Dashboard split by conference (the owner): "Standings by conference" East | West tables with seeds, playoff / play-in /
   lottery bands, GB, net, playoff and title odds (replaces the tier chips); All / East / West filter on "Styles and
   ranks" (table rows hide, map logos of the other conference fade). Fixed a CSS class clash (`.conf` was already the

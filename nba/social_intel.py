@@ -15,10 +15,10 @@ from datetime import date, datetime, timedelta, timezone
 from . import analyst, db, espn
 
 log = logging.getLogger(__name__)
-BUDGET = {"search": 12, "read": 12, "subtitle": 6}
+BUDGET = {"search": 12, "read": 12, "subtitle": 6, "web_search": 8, "web_read": 10}
 # seconds between calls of the same kind. YouTube's caption endpoint 429'd the home IP after ~1 pull per few minutes
 # (2026-11-09: 3 tests), so subtitles are spaced 150 s; a nightly pass takes about 15 minutes.
-SPACING = {"search": 11, "read": 4, "subtitle": 150}
+SPACING = {"search": 11, "read": 4, "subtitle": 150, "web_search": 4, "web_read": 4}
 STOP_CODES = {"RATE_LIMITED", "PLATFORM_BLOCKED", "NEED_LOGIN", "BUSY"}
 PREFERRED = ("BBALLBREAKDOWN", "Thinking Basketball", "Blind Pig Basketball", "Coach Mike", "Swish Cultures",
              "Half Court Hoops", "Basketball Immersion", "Coach Pat", "The Athletic NBA", "Hoop Vision")
@@ -61,7 +61,8 @@ class Reach:
             self.sleep(wait)
         self.used[action] += 1
         self.last[action] = time.monotonic()
-        rc, out = self.runner(["agent-reach", "youtube", action, *args])
+        channel, verb = ("web", action[4:]) if action.startswith("web_") else ("youtube", action)
+        rc, out = self.runner(["agent-reach", channel, verb, *args])
         try:
             j = json.loads(out)
         except ValueError:
@@ -69,7 +70,7 @@ class Reach:
         if not j.get("ok"):
             err = j.get("error") or {}
             if err.get("code") in STOP_CODES:
-                raise Stop(f"YouTube {err.get('code')}: {str(err.get('message'))[:160]}")
+                raise Stop(f"{'Web' if action.startswith('web_') else 'YouTube'} {err.get('code')}: {str(err.get('message'))[:160]}")
             return None
         return j.get("items") or []
 
@@ -114,7 +115,7 @@ def _date(s):
         return None
 
 
-def extract(text, game, url, title, model, runner=None) -> list[dict]:
+def extract(text, game, url, title, model, runner=None, prompt="film.md") -> list[dict]:
     """claude -p (cheap model): named sets / coverages only, strict JSON, validated and normalised."""
     words = text.split()
     found = []
@@ -124,7 +125,7 @@ def extract(text, game, url, title, model, runner=None) -> list[dict]:
                                     "home_name": espn.NAMES.get(game["home"]), "away_name": espn.NAMES.get(game["away"])},
                            "video_title": title, "transcript_chunk": chunk})
         try:
-            raw = analyst.call((analyst.PROMPTS / "film.md").read_text(encoding="utf-8"), user, model,
+            raw = analyst.call((analyst.PROMPTS / prompt).read_text(encoding="utf-8"), user, model,
                                **({"runner": runner} if runner else {}))
             data = analyst.extract_json(raw) if "{" in raw else {"items": []}
         except Exception as e:
@@ -138,7 +139,7 @@ def extract(text, game, url, title, model, runner=None) -> list[dict]:
             kind = SETS.get(label) or (x.get("kind") if x.get("kind") in ("set", "action", "coverage") else None)
             if not kind:
                 continue
-            found.append({"team": team, "label": label, "kind": kind, "who": str(x.get("who", ""))[:80],
+            found.append({"team": team, "label": label, "kind": kind, "who": str(x.get("who", ""))[:80], "ato": int(bool(x.get("ato"))),
                           "summary": " ".join(str(x.get("summary", "")).split())[:300], "url": url, "title": title[:150]})
     seen, out = set(), []
     for f in found:
@@ -184,10 +185,7 @@ def run(conn, today: str, model: str, reach=None, claude_runner=None, days=3) ->
                 items = extract(text, g, url, v.get("title") or "", model, claude_runner)
                 with db.tx(conn):
                     for it in items:
-                        conn.execute("""insert or ignore into film_items(game_id, date, team, kind, label, who, summary, url, title, channel, created)
-                                        values (?,?,?,?,?,?,?,?,?,?,?)""",
-                                     (g["game_id"], g["date"], it["team"], it["kind"], it["label"], it["who"], it["summary"],
-                                      url, it["title"], v.get("author") or "", datetime.now(timezone.utc).isoformat(timespec="seconds")))
+                        _store(conn, g["game_id"], g["date"], it, url, v.get("author") or "")
                 _video(conn, url, g["game_id"], f"done: {len(items)} labels")
                 added += [{**it, "game_id": g["game_id"]} for it in items]
             with db.LOCK:
@@ -212,7 +210,12 @@ def playbook(conn, team: str, season_since: str | None = None) -> dict:
     for r in rows:
         counts.setdefault(r["kind"], {}).setdefault(r["label"], 0)
         counts[r["kind"]][r["label"]] += 1
-    return {"counts": {k: dict(sorted(v.items(), key=lambda x: -x[1])) for k, v in counts.items()}, "recent": rows[:12]}
+    ato = {}
+    for r in rows:
+        if r.get("ato"):
+            ato[r["label"]] = ato.get(r["label"], 0) + 1
+    return {"counts": {k: dict(sorted(v.items(), key=lambda x: -x[1])) for k, v in counts.items()}, "recent": rows[:12],
+            "ato": dict(sorted(ato.items(), key=lambda x: -x[1]))}
 
 
 def contradictions(items: list[dict], labels_by_team: dict) -> list[dict]:
@@ -223,3 +226,57 @@ def contradictions(items: list[dict], labels_by_team: dict) -> list[dict]:
             if any(l["label"] == inferred for l in labels_by_team.get(it["team"], [])):
                 out.append({**it, "inferred": inferred})
     return out
+
+def _store(conn, game_id, d, it, url, channel):
+    conn.execute("""insert or ignore into film_items(game_id, date, team, kind, label, who, summary, url, title, channel, created, ato)
+                    values (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 (game_id, d, it["team"], it["kind"], it["label"], it["who"], it["summary"], url, it["title"], channel,
+                  datetime.now(timezone.utc).isoformat(timespec="seconds"), it.get("ato", 0)))
+
+
+def season_articles(conn, today: str, model: str, reach=None, claude_runner=None, per_night=6, teams=None) -> dict:
+    """Written breakdowns of a team's offense / defense this season (Exa search + Jina read via Agent Reach).
+    Rotates through the league, `per_night` teams a night, so every team is refreshed about every five days."""
+    reach = reach or Reach()
+    explicit, teams = teams, sorted(espn.TEAM_IDS)
+    start = (date.fromisoformat(today).toordinal() * per_night) % len(teams)
+    pick = [teams[(start + i) % len(teams)] for i in range(per_night)] if not explicit else list(explicit)
+    added, stop = [], None
+    try:
+        for t in pick:
+            name = espn.NAMES[t]
+            items = reach("web_search", f"{name} 2026-27 offense sets defensive scheme film breakdown", "--limit", "6") or []
+            used = 0
+            for it in items:
+                url = it.get("url") or ""
+                if not url or used >= 2 or conn.execute("select 1 from film_videos where url=?", (url,)).fetchone():
+                    continue
+                pub = _date(it.get("published_at"))
+                if pub and pub < date(2026, 9, 1):          # older than this season's camp: skip
+                    _video(conn, url, "", "skipped: old article")
+                    continue
+                if any(x in url for x in ("youtube.com", "youtu.be", "reddit.com", "x.com", "twitter.com")):
+                    continue
+                got = reach("web_read", url) or []
+                text = (got[0].get("text") if got else "") or ""
+                used += 1
+                if len(text.split()) < 200:
+                    _video(conn, url, "", "too short")
+                    continue
+                game = {"date": today, "home": t, "away": t}
+                found = [f for f in extract(text, game, url, it.get("title") or "", model, claude_runner, prompt="film_season.md")
+                         if f["team"] == t]
+                with db.tx(conn):
+                    for f in found:
+                        _store(conn, "", (pub or date.fromisoformat(today)).isoformat(), f, url, _host(url))
+                _video(conn, url, "", f"done: {len(found)} labels")
+                added += found
+    except Stop as e:
+        stop = str(e)
+    return {"teams": pick, "added": added, "stop": stop}
+
+
+def _host(url):
+    m = re.match(r"https?://(?:www\.)?([^/]+)", url)
+    return m.group(1) if m else url
+

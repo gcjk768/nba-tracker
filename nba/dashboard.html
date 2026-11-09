@@ -170,6 +170,32 @@ td { padding: 6px; }
 tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--bg-2) 60%, transparent); }
 td.r, th.r { text-align: right; }
 
+/* team playbooks */
+.pbgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+@media (max-width: 420px) { .pbgrid { grid-template-columns: 1fr; } }
+.pb { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; display: grid; gap: 12px; align-content: start; }
+.pb[hidden] { display: none; }
+.pb header { display: flex; gap: 12px; align-items: center; cursor: pointer; }
+.pb header b { font-size: 16px; }
+.prs { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.pr { font: 600 11px "Geist Mono", ui-monospace, monospace; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--line-2); color: var(--ink-2); }
+.pr.t5 { background: color-mix(in srgb, var(--good) 22%, transparent); border-color: transparent; color: var(--ink); }
+.pr.b5 { background: color-mix(in srgb, var(--bad) 20%, transparent); border-color: transparent; color: var(--ink); }
+.pbs { border-top: 1px solid var(--line); padding-top: 10px; }
+.pbs h4 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.mx { display: grid; grid-template-columns: 128px 1fr 44px 46px; gap: 8px; align-items: center; font-size: 13px; margin: 3px 0; }
+.mx .tr { height: 8px; position: relative; }
+.mx .f { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 0 3px 3px 0; transition: width .8s var(--ease); }
+.mx .num:last-child { font-size: 12px; text-align: right; }
+.pb .meta { font-size: 12px; color: var(--ink-3); margin-top: 6px; }
+.pb .meta b { color: var(--ink-2); font-weight: 600; }
+.pb .ato { font-size: 13px; color: var(--ink-2); }
+.pb .ato b { font-size: 22px; color: var(--ink); letter-spacing: -.02em; margin-right: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; font-size: 12px; }
+.sc { padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line-2); color: var(--ink-2); }
+.sc.rep { border-color: var(--accent); color: var(--accent); }
+.sel { font: inherit; font-size: 13px; color: var(--ink); background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 5px 8px; }
+
 /* conference standings */
 .confs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
 @media (max-width: 980px) { .confs { grid-template-columns: 1fr; } }
@@ -337,6 +363,14 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
     <div class="map-wrap"><div id="map"></div>
       <div class="wins"><h3>What's winning this season</h3><p class="muted" id="winsNote"></p><div id="wins"></div></div></div>
     <div style="overflow-x:auto;margin-top:18px"><table class="styles" id="styles"></table></div>
+  </section>
+
+  <section class="block reveal" id="s-pb">
+    <div class="sh"><div><h2>Team playbooks</h2><p id="pbSub"></p></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label class="muted" style="font-size:13px">Sort <select id="pbSort" class="sel"><option value="net">Net rank</option><option value="off">Offense rank</option><option value="def">Defense rank</option><option value="ato">ATO rank</option></select></label>
+        <div class="seg" id="pbSeg" role="group" aria-label="Conference"><button data-cf="All" aria-pressed="true">All</button><button data-cf="East" aria-pressed="false">East</button><button data-cf="West" aria-pressed="false">West</button></div></div></div>
+    <div class="pbgrid" id="pbGrid"></div>
   </section>
 
   <section class="block reveal">
@@ -546,6 +580,55 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
   svg.addEventListener("mouseleave", () => { tip.style.opacity = 0; svg.querySelector("#xh").setAttribute("x1", -9); svg.querySelector("#xh").setAttribute("x2", -9); });
   $("linesTable").innerHTML = `<table><thead><tr><th>Date</th>${top.map(t => `<th class="r">${esc(t)}</th>`).join("")}</tr></thead><tbody>` +
     dates.map((d, k) => `<tr><td class="num">${d}</td>${top.map(t => `<td class="r num">${pct(T.teams[t][k], 1)}</td>`).join("")}</tr>`).reverse().join("") + "</tbody></table>";
+})();
+
+// ---------- team playbooks: what every team runs (offense, ATO, defense, named sets) ----------
+(function playbooksSection() {
+  const PB = D.playbooks || [], box = $("pbGrid");
+  if (!PB.length) { $("s-pb").hidden = true; return; }
+  const L = D.ato_league || {};
+  $("pbSub").textContent = `Season to date from play-by-play (${L.n || 0} after-timeout possessions league-wide, ${(L.ppp || 0).toFixed(2)} points each on average). Named sets come from the film room and written breakdowns.`;
+  const rank = (lab, n) => `<span class="pr ${n && n <= 5 ? "t5" : n && n >= 26 ? "b5" : ""}" title="${lab} rank, 1 = best">${lab} ${n ? "#" + n : "n/a"}</span>`;
+  const sgn = v => (v > 0 ? "+" : "") + (100 * v).toFixed(1);
+  const chip = l => `<span class="sc" title="${esc(l.label)}. Inferred, confidence ${Math.round(100 * l.confidence)}%: ${esc(l.evidence)}">${esc(l.label.split(" (")[0])}</span>`;
+  const named = obj => Object.entries(obj || {}).map(([k, n]) => `<span class="sc rep" title="reported ${n} time${n > 1 ? "s" : ""}">${esc(k)}${n > 1 ? " ×" + n : ""}</span>`).join("");
+  const card = p => {
+    const o = p.offense, a = p.ato, d = p.defense, mx = Math.max(...o.mix.map(m => m.share));
+    const nm = p.named || {};
+    const sets = named(Object.assign({}, nm.set || {}, nm.action || {})), covs = named(nm.coverage || {});
+    return `<article class="pb" data-conf="${esc(p.conf)}">
+      <header data-open="${esc(p.team)}">${logo(p.team, "md")}<div><b>${esc(NAME(p.team))}</b><span class="muted"> ${esc(p.record)}</span>
+        <div class="prs">${rank("OFF", p.off_rank)}${rank("DEF", p.def_rank)}${rank("ATO", a && !a.small_sample ? a.rank : null)}</div></div></header>
+      <div class="pbs"><h4>Offense: what they run most</h4>
+        ${o.mix.map(m => `<div class="mx"><span>${esc(m.kind)}</span><span class="tr"><span class="f" data-w="${100 * m.share / mx}" style="background:${teamColor(p.team)}" data-tc="${esc(p.team)}"></span></span>
+          <span class="num">${pct(m.share)}</span><span class="num ${m.vs_lg >= 0 ? "up" : "down"}" title="vs league average, percentage points">${sgn(m.vs_lg)}</span></div>`).join("")}
+        <div class="meta">assisted makes ${pct(o.assisted)} · transition ${pct(o.transition)} · 3PA ${pct(o.three_rate)} · ${o.pps.toFixed(2)} pts/shot</div>
+        <div class="chips">${o.styles.map(chip).join("") || `<span class="muted">balanced, no clear lean</span>`}</div></div>
+      <div class="pbs"><h4>After timeouts (ATO)</h4>
+        ${a ? `<div class="ato"><b class="num">${a.ppp.toFixed(2)}</b> pts per possession ${a.small_sample ? `<span class="muted">(only ${a.n}, sample too small)</span>` : `(#${a.rank} of ${L.ranked || 30})`} · scores ${pct(a.score_rate)} · turnovers ${pct(a.tov_rate)}</div>
+          <div class="meta">Usual look: <b>${esc(a.top_kind || "n/a")}</b> ${pct(a.top_kind_share)} · 3PA ${pct(a.three_rate)} · go-to: ${esc(a.go_to.join(", ") || "n/a")}</div>
+          <div class="meta">Late game (last 2 min, OT): ${a.late_n ? `${a.late_ppp.toFixed(2)} on ${a.late_n}` : "none yet"} · ${a.own_n} of ${a.n} out of their own timeout</div>
+          <div class="chips">${named(a.named) || `<span class="muted">no named ATO set reported yet</span>`}</div>`
+          : `<div class="muted">No after-timeout possessions yet.</div>`}</div>
+      <div class="pbs"><h4>Defense</h4>
+        <div class="chips">${d.styles.map(chip).join("") || `<span class="muted">no clear scheme lean</span>`}</div>
+        <div class="meta">Opponents: rim shots ${pct(d.rim_rate)} · 3PA ${pct(d.three_rate)} · ${d.pps.toFixed(2)} pts/shot · forces turnovers ${d.forced_tov_pct}th pct${d.top_blocker ? ` · anchor ${esc(d.top_blocker)}` : ""}</div>
+        ${covs ? `<div class="chips">${covs}</div>` : ""}</div>
+      <div class="pbs last"><h4>Named sets and coverages <span class="muted" style="font-weight:400">reported</span></h4>
+        <div class="chips">${sets || covs ? sets + covs : `<span class="muted">Nothing reported yet. The film room checks breakdowns, pressers and articles nightly.</span>`}</div></div>
+    </article>`;
+  };
+  box.innerHTML = PB.map(card).join("");
+  const grow = () => box.querySelectorAll(".f[data-w]").forEach(f => f.style.width = f.dataset.w + "%");
+  reduced ? grow() : new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { o.disconnect(); setTimeout(grow, 100); } }, {threshold: .05}).observe(box);
+  document.querySelectorAll("#pbSeg button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#pbSeg button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    box.querySelectorAll(".pb").forEach(c => c.hidden = b.dataset.cf !== "All" && c.dataset.conf !== b.dataset.cf);
+  });
+  $("pbSort").onchange = e => {
+    const key = e.target.value, val = p => key === "ato" ? (p.ato && !p.ato.small_sample ? p.ato.rank : 99) : p[key + "_rank"];
+    PB.slice().sort((a, b) => val(a) - val(b)).forEach(p => box.appendChild(box.querySelector(`.pb header[data-open="${p.team}"]`).parentElement));
+  };
 })();
 
 // ---------- standings by conference ----------
@@ -786,6 +869,13 @@ async function openTeam(team, player) {
       ${d ? `<p style="font-size:14px;margin:0 0 12px">Opponents score <b class="num">${d.pps.toFixed(2)}</b> points per shot against them, ${ordinal(Math.round(1 + (T.pct_def.pps ?? 50) * 29 / 100))} best of 30. Defensive rating ${R.def > 0 ? "+" : ""}${R.def ?? "?"} per 100 vs average.</p>` : ""}
       ${lab("defense")}<div style="margin-top:14px">${def}</div>
       <div class="nm-note">Not measurable from public data: ${esc((T.not_measurable || []).join(", "))}. NBA.com's play-type and matchup feeds are blocked from the home network, so labels above are inferred from shot data and tagged with confidence.</div></div>
+    ${T.ato ? `<div class="dsec"><h3>After timeouts (ATO)</h3><p>The first possession after a timeout, measured from play-by-play (${T.ato.own_n} of ${T.ato.n} came out of their own timeout).</p>
+      <div class="kpis"><div><b class="num">${T.ato.ppp.toFixed(2)}</b><span>pts per possession${T.ato.small_sample ? " (small sample)" : ` · #${T.ato.rank}`}</span></div>
+        <div><b class="num">${pct(T.ato.score_rate)}</b><span>possessions that score (league ${pct((T.ato_league || {}).score_rate)})</span></div>
+        <div><b class="num">${pct(T.ato.tov_rate)}</b><span>end in a turnover</span></div>
+        <div><b class="num">${T.ato.late_n ? T.ato.late_ppp.toFixed(2) : "n/a"}</b><span>late game (${T.ato.late_n} possessions)</span></div></div>
+      ${bars(kinds, T.ato.kind, o ? o.kind : {}, null, c)}
+      <div class="muted" style="font-size:12px;margin-top:8px">Tick = their normal offense. Go-to: ${esc(T.ato.top_shooters.map(x => x.name + " (" + x.shots + ")").join(", ") || "n/a")}${Object.keys((T.film || {}).ato || {}).length ? " · named ATO sets: " + esc(Object.keys(T.film.ato).join(", ")) : ""}</div></div>` : ""}
     ${(T.vs_styles || []).length ? `<div class="dsec"><h3>Record against styles</h3><p>Results against opponents grouped by the opponent's inferred style. Small samples early in the season.</p>
       <table><thead><tr><th>Opponent style</th><th class="r">Games</th><th class="r">Record</th><th class="r">Avg margin</th></tr></thead><tbody>${T.vs_styles.map(v =>
         `<tr><td>${esc(v.style)}</td><td class="r num">${v.games}</td><td class="r num">${esc(v.record)}</td><td class="r num ${v.avg_margin >= 0 ? "up" : "down"}">${v.avg_margin > 0 ? "+" : ""}${v.avg_margin}</td></tr>`).join("")}</tbody></table></div>` : ""}

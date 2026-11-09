@@ -13,7 +13,8 @@ Rules
 - "label" is the plain name, lower case, from the list above when it matches; otherwise the name used in the video.
 - "kind" is set, action or coverage.
 - "who" is the speaker or the person quoted, if clear (e.g. "Mark Daigneault, postgame"), else "".
+- "ato" is true when the speaker says the set was called out of a timeout (an ATO play, "after the timeout", "drew it up").
 - "summary" is your own paraphrase, at most 2 short sentences. Never copy more than 8 words in a row from the transcript.
 - If nothing qualifies, return {"items": []}. Do not guess.
 
-Output exactly: {"items":[{"team":"","label":"","kind":"set|action|coverage","who":"","summary":""}]}
+Output exactly: {"items":[{"team":"","label":"","kind":"set|action|coverage","ato":false,"who":"","summary":""}]}

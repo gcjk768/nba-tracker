@@ -110,6 +110,8 @@ def data(ctx) -> dict:
                   "market": {t: round(v, 4) for t, v in mkt.items()}, "latest": latest},
         "rankings": rankings, "status": status[:40],
         "styles": styles,
+        "playbooks": playbooks(ctx, styles),
+        "ato_league": {k: v for k, v in ato_profiles(ctx).get("_league", {}).items()},
         "what_wins": schemes.what_wins(styles), "tonight": jobs.slate_view(ctx, today), "last_night": {"date": last_night, "games": games},
         "scorecard": {k: sc.get(k) for k in ("n", "wins", "acc", "brier", "logloss", "elo_brier", "elo_acc", "mkt_brier",
                                              "mkt_acc", "mkt_n", "model_brier_on_mkt", "calibration", "most_missed")},
@@ -137,6 +139,48 @@ def profiles(ctx) -> dict:
         _CACHE.clear()
         _CACHE[k] = schemes.team_profiles(ctx.conn, ctx.s.espn_season, rows)
     return _CACHE[k]
+
+
+def ato_profiles(ctx) -> dict:
+    from . import ato
+    k = ("ato", _key(ctx.conn))
+    if k not in _CACHE:
+        names = {r[0]: r[1] for r in ctx.conn.execute("select player_id, max(name) from player_box group by player_id")}
+        _CACHE[k] = ato.profiles(ato.possessions(ctx.conn, ctx.s.espn_season), names)
+    return _CACHE[k]
+
+
+def playbooks(ctx, styles: list[dict]) -> list[dict]:
+    """One card per team: what they run most on offense, after timeouts, on defense, and named sets reported."""
+    from . import social_intel
+    P, A = profiles(ctx), ato_profiles(ctx)
+    lo, ld = P["_league"]["offense"], P["_league"]["defense"]
+    out = []
+    for r in styles:
+        t = r["team"]
+        o, d, a = P[t]["offense"], P[t]["defense"], A.get(t)
+        mix = sorted(((k, v, v - lo.get(f"kind:{k}", 0), P[t]["pct_off"].get(f"kind:{k}")) for k, v in o["kind"].items()), key=lambda x: -x[1])
+        pb = social_intel.playbook(ctx.conn, t)
+        out.append({
+            "team": t, "conf": "East" if t in espn.EAST else "West", "record": r["record"],
+            "off_rank": r["off_rank"], "def_rank": r["def_rank"], "net_rank": r["net_rank"],
+            "offense": {"mix": [{"kind": k, "share": round(v, 3), "vs_lg": round(dv, 3), "pct": pc} for k, v, dv, pc in mix[:5]],
+                        "assisted": round(o["assisted"], 3), "transition": round(o["transition"], 3), "three_rate": round(o["three_rate"], 3),
+                        "rim_rate": round(o["rim_rate"], 3), "pps": round(o["pps"], 3), "styles": r["off_styles"]},
+            "ato": None if not a else {"n": a["n"], "own_n": a["own_n"], "ppp": round(a["ppp"], 3), "rank": a["rank"],
+                                        "score_rate": round(a["score_rate"], 3), "tov_rate": round(a["tov_rate"], 3),
+                                        "late_n": a["late_n"], "late_ppp": None if a["late_ppp"] is None else round(a["late_ppp"], 3),
+                                        "top_kind": max(a["kind"], key=a["kind"].get) if a["n"] else None,
+                                        "top_kind_share": round(max(a["kind"].values()), 3) if a["n"] else 0,
+                                        "three_rate": round(a["three_rate"], 3), "go_to": [x["name"] for x in a["top_shooters"][:2]],
+                                        "small_sample": a["small_sample"], "named": pb["ato"]},
+            "defense": {"styles": r["def_styles"], "rim_rate": round(d["rim_rate"], 3), "three_rate": round(d["three_rate"], 3),
+                        "pps": round(d["pps"], 3), "rim_pct": P[t]["pct_def"].get("rim_rate"), "three_pct": P[t]["pct_def"].get("three_rate"),
+                        "forced_tov_pct": P[t]["forced_tov_pct"],
+                        "top_blocker": P[t]["top_blocker"]["name"] if P[t]["top_blocker"]["per_game"] >= 1.0 else None},
+            "named": pb["counts"], "named_n": len(pb["recent"]),
+        })
+    return out
 
 
 def player_inputs(ctx):
@@ -177,6 +221,7 @@ def team_data(ctx, team: str) -> dict | None:
             "roster": players.roster(c, season, team, injuries, values),
             "vs_styles": schemes.record_vs_styles(c, season, team, prof_all),
             "film": _film(c, team, prof.get("labels", [])),
+            "ato": ato_profiles(ctx).get(team), "ato_league": ato_profiles(ctx).get("_league"),
             "recent": recent, "upcoming": upcoming, "kinds": list(schemes.KINDS), "zones": list(schemes.ZONES)}
 
 

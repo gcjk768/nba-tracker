@@ -901,6 +901,7 @@ def _film(ctx, key):
     from . import schemes, social_intel
     res = social_intel.run(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach"),
                            claude_runner=ctx.runner)
+    arts = social_intel.season_articles(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach_web"), claude_runner=ctx.runner)
     added = res["added"]
     by_game = {}
     for it in added:
@@ -923,6 +924,9 @@ def _film(ctx, key):
                          f"but the play-by-play read was <i>{tp.e(c['inferred'])}</i>")
             lines.append(f"   {tp.e(c['summary'])} · <a href=\"{tp.e(c['url'])}\">video</a>")
         ctx.tg.send("\n".join(lines))
-    ctx.vault.activity("🎬", "film room", f"{res['games']} games, {len(added)} labels"
+    ctx.vault.activity("🎬", "film room", f"{res['games']} games, {len(added)} labels from video, "
+                       f"{len(arts['added'])} from articles on {', '.join(arts['teams'])}"
+                       + (f", articles stopped: {arts['stop']}" if arts["stop"] else "")
                        + (f", {len(clash)} contradictions" if clash else "") + (f", stopped: {res['stop']}" if res["stop"] else ""))
-    return {"games": res["games"], "labels": len(added), "contradictions": len(clash), "stop": res["stop"], "used": res["used"]}
+    return {"games": res["games"], "labels": len(added), "article_labels": len(arts["added"]), "article_teams": arts["teams"],
+            "contradictions": len(clash), "stop": res["stop"], "article_stop": arts["stop"], "used": res["used"]}

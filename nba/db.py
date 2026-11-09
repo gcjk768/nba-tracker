@@ -89,6 +89,9 @@ def connect(path) -> sqlite3.Connection:
 def migrate(c):
     with LOCK:
         c.executescript(SCHEMA)
+        cols = {r[1] for r in c.execute("pragma table_info(film_items)")}
+        if "ato" not in cols:
+            c.execute("alter table film_items add column ato int default 0")
 
 
 @contextmanager
