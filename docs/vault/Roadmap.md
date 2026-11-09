@@ -5,9 +5,10 @@ updated: 2026-11-09
 # Roadmap
 
 - [x] Phase 1 spec, plan, build, backtest
-- [ ] Deploy to the NAS + GitHub `gcjk768/nba-tracker` (private) via nas-sync
-- [ ] the owner: create the bot in @BotFather → token via `set_token.py nba-tracker`; add it to the owner Channel as admin
-- [ ] Create the "NBA" topic, put chat/thread ids + `ALLOWED_USER_IDS` in the NAS `.env`, recreate
+- [x] Deploy to the NAS + GitHub `gcjk768/nba-tracker` (private) via nas-sync
+- [x] Bot @gcjk_nbatracker_bot created, token set, admin in the owner Channel
+- [x] Topic "🏀 NBA" (16211), ids in the NAS `.env`
+- [ ] Check the first live digest (15:15 SGT 2026-11-09) and the first AAR (2026-11-10, first graded picks)
 - [ ] Phase 2: lineups + on/off from ESPN substitutions, inferred schemes (`schemes.py`), player scouting +
       archetypes (`players.py`), shot charts, similarity, `/plays`, full `/player`
 - [ ] Phase 3: film room (Agent Reach YouTube first), `/film`

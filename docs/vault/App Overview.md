@@ -4,7 +4,7 @@ updated: 2026-11-09
 ---
 # App Overview
 
-**Status: Phase 1 built (54 tests), backtested, deploying.** Spec: `docs/superpowers/specs/2026-11-09-nba-tracker-phase1-design.md`.
+**Status: Phase 1 live on the NAS since 2026-11-09** (container `nba-tracker`, bot @gcjk_nbatracker_bot → the owner Channel › 🏀 NBA). Spec: `docs/superpowers/specs/2026-11-09-nba-tracker-phase1-design.md`.
 
 Python 3.12 package `nba/`, one container `nba-tracker` (`python -m nba serve`): Telegram bot + APScheduler in one
 asyncio loop; pipelines run one at a time in a worker thread (`nba/scheduler.py`, `JOB_LOCK`).

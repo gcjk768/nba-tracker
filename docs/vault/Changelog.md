@@ -5,6 +5,13 @@ updated: 2026-11-09
 # Changelog
 
 ## 2026-11-09
+- Deployed to the NAS (`/volume1/docker/nba-tracker`, container healthy, 146 games backfilled); GitHub `gcjk768/nba-tracker`
+  (private) via nas-sync. Bot @gcjk_nbatracker_bot created in BotFather, admin in the owner Channel (delete/pin/manage topics
+  only), topic "🏀 NBA" (thread 16211); hello card posted.
+- Security fix: httpx logged Telegram request URLs (bot token) at INFO; silenced httpx/httpcore and rotated the token
+  (/revoke). Token handled via clipboard → `token.txt` → `set_token.py`, never printed.
+- Smoke run on live data found: daily didn't collect last night if the schedule feed failed; tonight's slate missed when the
+  schedule was empty; Pythagorean overflow; daily didn't snapshot injuries before predicting. All fixed.
 - Probed data sources: NBA.com (stats, cdn, injury report) blocked from the home IP even via the NAS Playwright
   server; switched to ESPN + hoopR (the owner approved). NBA.com-only stats dropped.
 - Phase 1 built (54 tests): ESPN/hoopR collector, excitement + WPA, Elo, ratings, simulation, frozen predictions,

@@ -7,6 +7,9 @@ import sys
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# httpx logs every request URL at INFO, and Telegram URLs carry the bot token: keep them out of the logs
+for noisy in ("httpx", "httpcore", "telegram.ext.Updater", "apscheduler.scheduler", "apscheduler.executors.default"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
