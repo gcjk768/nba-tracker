@@ -170,6 +170,26 @@ td { padding: 6px; }
 tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--bg-2) 60%, transparent); }
 td.r, th.r { text-align: right; }
 
+/* conference standings */
+.confs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+@media (max-width: 980px) { .confs { grid-template-columns: 1fr; } }
+.cstand h3 { margin: 0 0 8px; font-size: 18px; letter-spacing: -.01em; }
+.cstand table { margin-top: 0; }
+.cstand td, .cstand th { padding: 7px 6px; }
+.cstand tbody tr { cursor: pointer; }
+.cstand tbody tr:hover td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.cstand tbody tr:nth-child(even) td { background: transparent; }
+.cstand tbody tr:hover:nth-child(even) td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.cstand tr.cut td { border-top: 1px dashed var(--line-2); }
+.cstand .seed { color: var(--ink-3); width: 22px; }
+.cstand .tm { display: flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
+.cstand .tm small { color: var(--ink-3); font-weight: 400; }
+.cstand .bandlab td { padding: 10px 6px 4px; font-size: 11px; color: var(--ink-3); letter-spacing: .04em; border: 0; background: transparent !important; cursor: default; }
+.oddsbar { display: inline-block; height: 4px; border-radius: 2px; background: var(--accent); vertical-align: middle; margin-right: 6px; width: 0; transition: width .9s var(--ease); }
+.seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 99px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 6px 14px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+
 /* model strip */
 .strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 @media (max-width: 900px) { .strip { grid-template-columns: 1fr 1fr; } }
@@ -312,15 +332,16 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
   </section>
 
   <section class="block reveal" id="s-styles">
-    <div class="sh"><div><h2>Styles and ranks</h2><p>How each team scores and defends, and how good it is at each end. Styles are inferred from play-by-play, ranks are measured (1 = best).</p></div></div>
+    <div class="sh"><div><h2>Styles and ranks</h2><p>How each team scores and defends, and how good it is at each end. Styles are inferred from play-by-play, ranks are measured (1 = best).</p></div>
+      <div class="seg" role="group" aria-label="Conference"><button data-cf="All" aria-pressed="true">All</button><button data-cf="East" aria-pressed="false">East</button><button data-cf="West" aria-pressed="false">West</button></div></div>
     <div class="map-wrap"><div id="map"></div>
       <div class="wins"><h3>What's winning this season</h3><p class="muted" id="winsNote"></p><div id="wins"></div></div></div>
     <div style="overflow-x:auto;margin-top:18px"><table class="styles" id="styles"></table></div>
   </section>
 
   <section class="block reveal">
-    <div class="sh"><div><h2>Where every team stands</h2><p>Grouped by simulated odds. Net rating is points per 100 possessions with a healthy rotation.</p></div></div>
-    <div class="tiers" id="tiers"></div>
+    <div class="sh"><div><h2>Standings by conference</h2><p>Seeds 1 to 6 go straight to the playoffs, 7 to 10 play in, 11 to 15 are in the lottery. Net rating is points per 100 possessions with a healthy rotation; odds from 10,000 simulated seasons.</p></div></div>
+    <div class="confs" id="tiers"></div>
     <details><summary>Full table</summary><div style="overflow-x:auto"><table id="full"></table></div></details>
   </section>
 
@@ -527,31 +548,39 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
     dates.map((d, k) => `<tr><td class="num">${d}</td>${top.map(t => `<td class="r num">${pct(T.teams[t][k], 1)}</td>`).join("")}</tr>`).reverse().join("") + "</tbody></table>";
 })();
 
-// ---------- tiers ----------
-(function tiers() {
+// ---------- standings by conference ----------
+(function standings() {
   const R = D.rankings;
   if (!R.length) { $("tiers").innerHTML = `<p class="muted">No ratings yet.</p>`; return; }
-  const groups = [["Contenders", "title odds 3% or more", r => r.title >= .03], ["Playoff teams", "playoffs 60% or more", r => r.playoffs >= .6],
-                  ["Play-in range", "playoffs 20 to 60%", r => r.playoffs >= .2], ["Lottery", "playoffs under 20%", r => true]];
-  const used = new Set(), maxT = Math.max(...R.map(r => r.title));
-  $("tiers").innerHTML = groups.map(([name, rule, f]) => {
-    const rows = R.filter(r => !used.has(r.team) && f(r)).sort((a, b) => b.title - a.title || b.healthy - a.healthy);
-    rows.forEach(r => used.add(r.team));
-    if (!rows.length) return "";
-    return `<div class="tier"><h3>${name} <span>${rows.length} · ${rule}</span></h3><div class="chips">${rows.map(r => `
-      <div class="chip" data-tc="${esc(r.team)}" data-prop="--tc" title="${esc(NAME(r.team))}">${logo(r.team)}
-        <span><span class="nm">${esc(r.team)}</span> <span class="rec num">${esc(r.record)}</span></span>
-        <span class="net num ${r.healthy >= 0 ? "up" : "down"}">${r.healthy > 0 ? "+" : ""}${r.healthy.toFixed(1)}</span>
-        <span class="ttl"><span class="bar" data-w="${100 * r.title / maxT}"></span><span class="num">${pct(r.title, r.title < .1 ? 1 : 0)} title</span></span>
-      </div>`).join("")}</div></div>`;
-  }).join("");
-  document.querySelectorAll(".chip[data-tc]").forEach(e => e.style.setProperty("--tc", teamColor(e.dataset.tc)));
-  const io = new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { o.disconnect();
-    document.querySelectorAll(".chip .bar").forEach(b => b.style.width = Math.max(2, +b.dataset.w * .4) + "px"); } }, {threshold: .1});
-  io.observe($("tiers"));
-  $("full").innerHTML = `<thead><tr><th>#</th><th>Team</th><th>Record</th><th class="r">Healthy net</th><th class="r">Net</th><th class="r">Off</th><th class="r">Def</th>
+  const wl = r => { const [w, l] = String(r.record).split("-").map(Number); return {w: w || 0, l: l || 0}; };
+  const conf = name => {
+    const rows = R.filter(r => r.conf === name).map(r => ({...r, ...wl(r)}))
+      .sort((a, b) => (b.w / Math.max(1, b.w + b.l)) - (a.w / Math.max(1, a.w + a.l)) || b.w - a.w || b.healthy - a.healthy);
+    const top = rows[0];
+    const gb = r => { const g = ((top.w - r.w) + (r.l - top.l)) / 2; return g <= 0 ? "-" : g.toFixed(1).replace(".0", ""); };
+    const band = (i) => i === 0 ? "PLAYOFFS" : i === 6 ? "PLAY-IN" : i === 10 ? "LOTTERY" : null;
+    const body = rows.map((r, i) => {
+      const lab = band(i);
+      return (lab ? `<tr class="bandlab"><td colspan="7">${lab}</td></tr>` : "") +
+        `<tr data-open="${esc(r.team)}" class="${i === 6 || i === 10 ? "cut" : ""}" title="${esc(NAME(r.team))}">
+          <td class="seed num">${i + 1}</td>
+          <td><span class="tm">${logo(r.team, "sm")}${esc(r.team)} <small>${esc((TM[r.team] && TM[r.team].short) || "")}</small></span></td>
+          <td class="num">${r.w}-${r.l}</td><td class="r num muted">${gb(r)}</td>
+          <td class="r num ${r.healthy >= 0 ? "up" : "down"}">${r.healthy > 0 ? "+" : ""}${r.healthy.toFixed(1)}</td>
+          <td class="r num">${pct(r.playoffs)}</td>
+          <td class="r num"><span class="oddsbar" data-w="${r.title}"></span>${pct(r.title, r.title < .1 ? 1 : 0)}</td></tr>`;
+    }).join("");
+    return `<div class="cstand"><h3>${name}</h3><div style="overflow-x:auto"><table>
+      <thead><tr><th>#</th><th>Team</th><th>W-L</th><th class="r">GB</th><th class="r">Net</th><th class="r">Playoffs</th><th class="r">Title</th></tr></thead>
+      <tbody>${body}</tbody></table></div></div>`;
+  };
+  $("tiers").innerHTML = conf("East") + conf("West");
+  const maxT = Math.max(...R.map(r => r.title));
+  new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { o.disconnect();
+    document.querySelectorAll(".oddsbar").forEach(b => b.style.width = Math.max(2, 44 * +b.dataset.w / maxT) + "px"); } }, {threshold: .1}).observe($("tiers"));
+  $("full").innerHTML = `<thead><tr><th>#</th><th>Team</th><th>Conf</th><th>Record</th><th class="r">Healthy net</th><th class="r">Net</th><th class="r">Off</th><th class="r">Def</th>
     <th class="r">Playoffs</th><th class="r">Title</th><th class="r">Elo title</th><th class="r">Market</th></tr></thead><tbody>` +
-    R.map((r, k) => `<tr><td class="num">${k + 1}</td><td>${esc(NAME(r.team))}</td><td class="num">${esc(r.record)}</td>
+    R.map((r, k) => `<tr><td class="num">${k + 1}</td><td>${esc(NAME(r.team))}</td><td>${esc(r.conf)}</td><td class="num">${esc(r.record)}</td>
       <td class="r num">${r.healthy.toFixed(1)}</td><td class="r num">${r.net.toFixed(1)}</td><td class="r num">${r.off.toFixed(1)}</td>
       <td class="r num">${r.def.toFixed(1)}</td><td class="r num">${pct(r.playoffs)}</td><td class="r num">${pct(r.title, 1)}</td>
       <td class="r num">${r.elo_title == null ? "weekly" : pct(r.elo_title, 1)}</td><td class="r num">${pct(r.market, 1)}</td></tr>`).join("") + "</tbody>";
@@ -621,7 +650,7 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
   if (!reduced) {     // logos fly out from the centre to their spot: shows the spread of the league
     imgs.forEach(i => { i.style.transition = "none"; i.style.transform = `translate(${i.dataset.dx}px, ${i.dataset.dy}px) scale(.4)`; i.style.opacity = 0; });
     new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { o.disconnect();
-      imgs.forEach((i, k) => setTimeout(() => { i.style.transition = ""; i.style.transform = "none"; i.style.opacity = 1; }, 20 * k)); } }, {threshold: .3}).observe(box);
+      imgs.forEach((i, k) => setTimeout(() => { i.style.transition = ""; i.style.transform = "none"; i.style.opacity = i.dataset.op || 1; }, 20 * k)); } }, {threshold: .3}).observe(box);
   }
   const tip = $("tip");
   box.querySelectorAll("[data-open]").forEach(el => {
@@ -674,6 +703,16 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
     });
   }
   draw();
+  // conference filter: table rows hide, map logos of the other conference fade (ranks stay league-wide)
+  const confOf = t => (D.rankings.find(r => r.team === t) || {}).conf;
+  document.querySelectorAll(".seg button").forEach(b => b.onclick = () => {
+    const cf = b.dataset.cf;
+    document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    $("styles").querySelectorAll("tbody tr").forEach(tr => { const t = tr.querySelector("[data-open]").dataset.open; tr.hidden = cf !== "All" && confOf(t) !== cf; });
+    box.querySelectorAll("[data-open]").forEach(el => { el.dataset.op = cf === "All" || confOf(el.dataset.open) === cf ? 1 : .12; if (el.style.transform !== "" && el.style.transform !== "none" && !reduced) return; el.style.opacity = el.dataset.op; });
+  });
+  const redraw = draw;
+  draw = () => { redraw(); const on = document.querySelector('.seg button[aria-pressed="true"]'); if (on && on.dataset.cf !== "All") on.click(); };
 })();
 
 // ---------- team drawer: offense, defense, inferred schemes, roster with player detail ----------

@@ -5,6 +5,10 @@ updated: 2026-11-09
 # Changelog
 
 ## 2026-11-09
+- Dashboard split by conference (the owner): "Standings by conference" East | West tables with seeds, playoff / play-in /
+  lottery bands, GB, net, playoff and title odds (replaces the tier chips); All / East / West filter on "Styles and
+  ranks" (table rows hide, map logos of the other conference fade). Fixed a CSS class clash (`.conf` was already the
+  confidence meter) that collapsed the new tables.
 - Phase 3 film room (the owner: "use YouTube and Agent Reach for sets like horns"): `nba/social_intel.py` wraps Agent Reach
   (YouTube search / read / subtitle, v1.6.1 from the GitHub release in the image). Nightly 21:00 SGT over the last
   3 days of games: postgame pressers + breakdown channels, upload date must be game day to +3, subtitles go to
