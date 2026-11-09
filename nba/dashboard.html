@@ -237,6 +237,9 @@ dialog.pdlg .dh { position: static; margin-top: 0; padding-top: 0; }
 table.pt { margin-top: 0; font-size: 12px; }
 table.pt td, table.pt th { padding: 4px 4px; }
 table.pt .sc { font-size: 12px; padding: 1px 7px; }
+table.pt .sc { white-space: nowrap; }
+table.pt .ctr { display: flex; flex-wrap: wrap; gap: 3px; }
+table.pt .grp { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
 /* conference standings */
 .confs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
 @media (max-width: 980px) { .confs { grid-template-columns: 1fr; } }
@@ -661,16 +664,15 @@ function ctxLine(p) {
 })();
 
 // ---------- team playbooks: what every team runs (offense, ATO, defense, named sets) ----------
-const SRC = {base: "every team", inferred: "inferred", reported: "reported"};
+const SRC = {base: "base", inferred: "inferred", reported: "reported"};
 function schemeTable(rows, n) {
   if (!rows.length) return "";
-  return `<table class="pt"><thead><tr><th>Scheme</th><th>Type</th><th class="r">Seen</th><th class="r" title="Opponents' make rate vs them on the shots this scheme tends to give up (league in brackets)">Gives up*</th><th>Beat it with</th></tr></thead><tbody>
-    ${rows.slice(0, n).map(x => `<tr><td><button class="sc rep" data-play="${esc(x.label)}" title="${esc(x.desc || "")}">${esc(x.label)}</button></td>
-      <td class="muted">${esc(x.group)}</td>
+  return `<table class="pt"><thead><tr><th>Scheme</th><th class="r">Seen</th><th class="r" title="Opponents' make rate vs them on the shots this scheme tends to give up (league in brackets)">Opp&nbsp;%*</th><th>Beat it with</th></tr></thead><tbody>
+    ${rows.slice(0, n).map(x => `<tr><td><button class="sc rep" data-play="${esc(x.label)}" title="${esc(x.desc || "")}">${esc(x.label)}</button><span class="grp">${esc(x.group)}</span></td>
       <td class="r num">${x.source === "reported" ? `${x.mentions}× <a href="${esc(x.url)}" target="_blank" rel="noopener" class="muted">src</a>` : `<span class="muted">${SRC[x.source]}</span>`}</td>
-      <td class="r num ${x.estimate ? (x.estimate.success <= x.estimate.lg ? "up" : "down") : ""}" title="${x.estimate ? esc(x.estimate.plays.join(", ")) + " (" + x.estimate.att + " shots)" : ""}">${x.estimate ? `${pct(x.estimate.success)}* <span class="muted">(${pct(x.estimate.lg)})</span>` : ""}</td>
-      <td>${x.counters.map(c => `<button class="sc" data-play="${esc(c)}">${esc(c)}</button>`).join(" ")}</td></tr>`).join("")}</tbody></table>
-    <div class="meta">* Estimated: how often opponents make the shots this scheme usually gives up, against them (green = stingier than league). Public data does not log which defense was played on each possession.</div>`;
+      <td class="r num ${x.estimate ? (x.estimate.success <= x.estimate.lg ? "up" : "down") : ""}" title="${x.estimate ? esc(x.estimate.plays.join(", ")) + " (" + x.estimate.att + " shots), league " + pct(x.estimate.lg) : ""}">${x.estimate ? pct(x.estimate.success) + "*" : ""}</td>
+      <td><div class="ctr">${x.counters.map(c => `<button class="sc" data-play="${esc(c)}">${esc(c)}</button>`).join("")}</div></td></tr>`).join("")}</tbody></table>
+    <div class="meta">* Opponents' make rate vs them on the shots this scheme usually gives up (green = better than league). An estimate: no public data logs the defense on each possession.</div>`;
 }
 function leanKey(label) {
   if (label.startsWith("Rim protector anchored")) return "rim protector";
@@ -705,7 +707,6 @@ function leanKey(label) {
             <td class="r num">${x.estimate ? x.estimate.pps.toFixed(2) + "*" : ""}</td></tr>`).join("")}</tbody></table>
           <div class="meta">* Estimated: how often the plays this set usually ends in go in for them. No public data logs which set each possession was.</div>`
           : `<div class="muted" style="font-size:13px">No breakdown naming their sets found yet. The nightly film room keeps searching articles and YouTube.</div>`}
-        ${(p.named_sets || []).filter(x => x.kind === "coverage").length ? `<div class="meta">Defensive coverages reported: ${p.named_sets.filter(x => x.kind === "coverage").map(x => `<button class="sc rep" data-play="${esc(x.label)}">${esc(x.label)}</button>`).join(" ")}</div>` : ""}
         ${(p.film_videos || []).length ? `<div class="meta">Film to watch: ${p.film_videos.slice(0, 3).map(v => `<a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.title.slice(0, 48))}</a> <span class="muted">(${esc(v.channel)})</span>`).join(" · ")}</div>` : ""}
       </div>
       <div class="pbs"><h4>Top 5 plays they run (measured: how each possession ended)</h4>
@@ -727,13 +728,11 @@ function leanKey(label) {
           : `<div class="muted">No after-timeout possessions yet.</div>`}</div>
       <div class="pbs"><h4>Defense: named schemes</h4>
         ${schemeTable(p.def_schemes || [], 6)}
-        ${(p.def_schemes || []).some(x => x.group === "zone" || x.group === "junk") ? "" : `<div class="meta">Zone (2-3, 3-2, 1-3-1, box-and-one): none reported this season. Most NBA teams play zone only now and then; the film room keeps looking.</div>`}
+        ${(p.def_schemes || []).some(x => x.group === "zone" || x.group === "junk") ? "" : `<div class="meta">Zone (2-3, 3-2, 1-3-1, box-and-one): none reported this season. NBA teams play zone only now and then.</div>`}
         <div class="chips">${d.styles.map(chip).join("") || `<span class="muted">no clear scheme lean</span>`}</div>
         <div class="meta">Opponents: rim shots ${pct(d.rim_rate)} · 3PA ${pct(d.three_rate)} · ${d.pps.toFixed(2)} pts/shot · forces turnovers ${d.forced_tov_pct}th pct${d.top_blocker ? ` · anchor ${esc(d.top_blocker)}` : ""}</div>
         ${(p.top_allowed || []).length ? `<div class="meta">Plays opponents run most against them: ${p.top_allowed.map(r => `<b>${esc(r.play)}</b> ${pct(r.share)}, ${pct(r.success)} in${r.rank ? ` (#${r.rank} D)` : ""}`).join(" · ")}</div>` : ""}
-        ${covs ? `<div class="chips">${covs}</div>` : ""}
-        ${(() => { const keys = [...new Set([...d.styles.map(l => leanKey(l.label)), ...Object.keys(nm.coverage || {})].filter(k => k && (D.kb || {}).counters && D.kb.counters.find(c => c.key === k)))];
-          return keys.length ? `<div class="meta">How to attack it: ${keys.map(k => { const c = D.kb.counters.find(x => x.key === k); return c.counters.slice(0, 3).map(x => `<button class="sc" data-play="${esc(x)}">${esc(x)}</button>`).join(" "); }).join(" ")}</div>` : ""; })()}</div>
+</div>
       <div class="pbs last" hidden><h4>Named sets and coverages <span class="muted" style="font-weight:400">reported</span></h4>
         <div class="chips">${sets || covs ? sets + covs : `<span class="muted">Nothing reported yet. The film room checks breakdowns, pressers and articles nightly.</span>`}</div></div>
     </article>`;
