@@ -5,6 +5,26 @@ updated: 2026-11-09
 # Changelog
 
 ## 2026-11-09
+- Telegram digest: "Matchup keys" for tonight's games (each side's best way to win = the opponent's top measured
+  weakness + the plays that attack it; never dropped, splits into a 2nd message on busy nights), dashboard link
+  (`DASHBOARD_URL`), `/help` links the dashboard, `/team` has "How to beat them". Cleared the job_runs row left by the
+  manual 14:35 film test so the 21:00 film room runs tonight.
+- "How to beat them" (the owner: "state teams weakness and how to exploit them"): `nba/scout.py` ranks each team on 14
+  measured weak spots (defense: rim, rim FG, threes, corners, mid-range, ball pressure, glass, fouls, transition;
+  offense: turnovers, 3P%, rim rate, ball movement, second chances), one-creator reliance, shot types that score well
+  against them, styles they lose to, poor ATO, and 3P luck. Worst seven in the league = weakness; each has evidence and
+  exploit plays (chips open the explainer). Top-10 defenses get a "trade-off" note on conceded threes. Top 3 on every
+  playbook card, full report in the drawer and `/team`.
+- Fix (the owner: "team playbooks East and West is incorrect"): the Styles filter wired `.seg button` page-wide, so it
+  overwrote the playbook buttons' handlers; East/West on the playbooks filtered the Styles table instead. Scoped each
+  filter to its own section; test guards against page-wide `.seg` selectors. Explainer picker: stricter context for
+  "chicago" and "lob" (had matched a Bulls highlight and a point-guard lesson).
+- Play explainers + "What beats what" (the owner: "add youtube to understand the play", "what play break what type of
+  defences"): `nba/playbook_kb.py` (coaching definitions for ~50 sets / actions / coverages, standard counters per
+  defense), `schemes.counter_evidence()` (shot types that score best vs teams with each lean or reported coverage, pts/shot
+  vs league), `social_intel.play_videos()` (one YouTube explainer per play via Agent Reach search only, cached in
+  `play_videos`). Every play chip opens a panel: definition, embedded video (youtube-nocookie), what beats it / what it
+  beats, teams running it. Team cards get "How to attack it".
 - Team playbooks (the owner: "what they normally run at ATO or in every offence and defence"): new "Team playbooks"
   section, one card per team (East / West filter, sort by net / off / def / ATO rank): offense play-type mix vs league,
   ATO block, defense lean, named sets. `nba/ato.py` measures after-timeout possessions from pbp (first real possession

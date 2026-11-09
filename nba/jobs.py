@@ -502,11 +502,22 @@ def build_digest(ctx, today, games, briefs, aar, tune_rep, st, sim, prev_sim, ve
               ("status", tp.status_block(status) if status else ""),
               ("movers", tp.movers_block(movers, sp) if movers else ""),
               ("title", tp.title_block(race, sp)), ("verdict", tp.verdict_block(vlines, sp)),
-              ("tonight", tp.tonight_block(tonight) if tonight else ""), ("record", tp.record_block(sc_all)),
-              ("link", f"🗂 <code>{tp.e(ctx.vault.obsidian_url(daily_rel))}</code>")]
+              ("tonight", tp.tonight_block(tonight) if tonight else ""), ("keys", _keys(ctx, tonight)), ("record", tp.record_block(sc_all)),
+              ("link", f"📊 <a href=\"{tp.e(ctx.s.dashboard_url)}\">Dashboard</a>  ·  🗂 <code>{tp.e(ctx.vault.obsidian_url(daily_rel))}</code>")]
     if warnings:
         blocks.insert(0, ("warn", "\n".join(f"{tp.SECTION_TITLES['warn']} <i>{tp.e(w)}</i>" for w in warnings[:3])))
     return tp.fit(blocks, tp.title("digest", "NBA DAILY", f"{_nice(today)} · {len(games)} games"))
+
+
+def _keys(ctx, tonight):
+    if not tonight:
+        return ""
+    try:
+        from . import web
+        return tp.matchup_block(tonight, web.weaknesses_all(ctx))
+    except Exception as e:
+        log.warning("matchup keys failed: %s", e)
+        return ""
 
 
 def _movers(ctx, today, n=4):
@@ -902,6 +913,10 @@ def _film(ctx, key):
     res = social_intel.run(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach"),
                            claude_runner=ctx.runner)
     arts = social_intel.season_articles(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach_web"), claude_runner=ctx.runner)
+    from . import playbook_kb as kb
+    want = [r[0] for r in ctx.conn.execute("select label, count(*) n from film_items group by label order by n desc")]
+    want += [x for k, (ctrs, _) in kb.COUNTERS.items() for x in [k] + ctrs]
+    vids = social_intel.play_videos(ctx.conn, list(dict.fromkeys(want)), limit=10)
     added = res["added"]
     by_game = {}
     for it in added:

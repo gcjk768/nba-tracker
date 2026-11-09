@@ -317,3 +317,43 @@ def record_vs_styles(conn, season, team, P: dict) -> list[dict]:
             x["n"] += 1
     return sorted(({"style": k, "record": f"{v['w']}-{v['l']}", "games": v["n"], "avg_margin": round(v["margin"] / v["n"], 1)}
                    for k, v in groups.items()), key=lambda x: -x["games"])
+
+
+def counter_evidence(conn, season, P: dict, reported: dict | None = None, min_shots=150) -> dict:
+    """For each defense type, which shot types score best against the teams that play it (pts/shot vs league).
+    Defense types come from our inferred leans plus coverages reported in the film room ({team: [coverage, ...]})."""
+    from . import playbook_kb as kb
+    teams_by = defaultdict(set)
+    for t, v in P.items():
+        if t.startswith("_"):
+            continue
+        for l in v["labels"]:
+            if l["side"] == "defense" and kb.lean_key(l["label"]):
+                teams_by[kb.lean_key(l["label"])].add(t)
+    for t, covs in (reported or {}).items():
+        for c in covs:
+            if c in kb.COUNTERS:
+                teams_by[c].add(t)
+    S = shots(conn, season)
+    lg = {k: [0, 0] for k in KINDS}
+    for s in S:
+        lg[s["kind"]][0] += s["pts"]
+        lg[s["kind"]][1] += 1
+    lg_pps = {k: v[0] / max(1, v[1]) for k, v in lg.items()}
+    out = {}
+    for key, teams in teams_by.items():
+        vs = [s for s in S if s["opp"] in teams]
+        if len(vs) < min_shots:
+            out[key] = {"teams": sorted(teams), "n": len(vs), "kinds": [], "small_sample": True}
+            continue
+        rows = []
+        for k in KINDS:
+            ks = [s for s in vs if s["kind"] == k]
+            if len(ks) >= 25:
+                pps = sum(s["pts"] for s in ks) / len(ks)
+                rows.append({"kind": k, "pps": round(pps, 3), "vs_lg": round(pps - lg_pps[k], 3), "n": len(ks),
+                             "share": round(len(ks) / len(vs), 3)})
+        out[key] = {"teams": sorted(teams), "n": len(vs), "small_sample": False,
+                    "kinds": sorted(rows, key=lambda r: -r["vs_lg"])}
+    out["_league_pps"] = {k: round(v, 3) for k, v in lg_pps.items()}
+    return out

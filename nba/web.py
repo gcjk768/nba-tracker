@@ -111,6 +111,7 @@ def data(ctx) -> dict:
         "rankings": rankings, "status": status[:40],
         "styles": styles,
         "playbooks": playbooks(ctx, styles),
+        "kb": kb_payload(ctx),
         "ato_league": {k: v for k, v in ato_profiles(ctx).get("_league", {}).items()},
         "what_wins": schemes.what_wins(styles), "tonight": jobs.slate_view(ctx, today), "last_night": {"date": last_night, "games": games},
         "scorecard": {k: sc.get(k) for k in ("n", "wins", "acc", "brier", "logloss", "elo_brier", "elo_acc", "mkt_brier",
@@ -150,6 +151,18 @@ def ato_profiles(ctx) -> dict:
     return _CACHE[k]
 
 
+def weaknesses_all(ctx) -> dict:
+    from . import scout
+    k = ("weak", _key(ctx.conn))
+    if k not in _CACHE:
+        P = profiles(ctx)
+        rows = agg.team_season(ctx.conn, ctx.s.espn_season, {})
+        vs = {t: schemes.record_vs_styles(ctx.conn, ctx.s.espn_season, t, P) for t in P if not t.startswith("_")}
+        _CACHE[k] = scout.weaknesses(ctx.conn, ctx.s.espn_season, P, ato_profiles(ctx), vs,
+                                     {t: r.get("luck_flags", []) for t, r in rows.items()})
+    return _CACHE[k]
+
+
 def playbooks(ctx, styles: list[dict]) -> list[dict]:
     """One card per team: what they run most on offense, after timeouts, on defense, and named sets reported."""
     from . import social_intel
@@ -179,8 +192,32 @@ def playbooks(ctx, styles: list[dict]) -> list[dict]:
                         "forced_tov_pct": P[t]["forced_tov_pct"],
                         "top_blocker": P[t]["top_blocker"]["name"] if P[t]["top_blocker"]["per_game"] >= 1.0 else None},
             "named": pb["counts"], "named_n": len(pb["recent"]),
+            "beat": weaknesses_all(ctx).get(t, [])[:3],
         })
     return out
+
+
+COUNTER_TITLES = {"drop": "Drop coverage", "switch": "Switching", "blitz": "Blitz / trap", "hedge": "Hard hedge", "ice": "Ice",
+                  "zone": "Zone", "pack the paint": "Packing the paint", "run shooters off": "Running shooters off the line",
+                  "turnover-forcing": "Turnover-forcing pressure", "rim protector": "Rim-protector anchor"}
+
+
+def kb_payload(ctx) -> dict:
+    from . import playbook_kb as kb, social_intel
+    c = ctx.conn
+    reported = {}
+    for r in c.execute("select team, label from film_items where kind='coverage'"):
+        reported.setdefault(r["team"], set()).add(r["label"])
+    ev = schemes.counter_evidence(c, ctx.s.espn_season, profiles(ctx), {t: list(v) for t, v in reported.items()})
+    labels = {r[0] for r in c.execute("select distinct label from film_items")}
+    for key, (ctrs, _) in kb.COUNTERS.items():
+        labels.add(key)
+        labels.update(ctrs)
+    counters = [{"key": k, "title": COUNTER_TITLES.get(k, k), "counters": v[0], "why": v[1], "source": "coaching principle + measured",
+                 "evidence": ev.get(k)} for k, v in kb.COUNTERS.items()]
+    counters.sort(key=lambda x: -len((x["evidence"] or {}).get("teams", [])))
+    return {"plays": {l: {"kind": kb.PLAYS.get(l, (None, None))[0], "desc": kb.PLAYS.get(l, (None, None))[1]} for l in labels},
+            "counters": counters, "videos": social_intel.video_map(c), "league_pps": ev.get("_league_pps")}
 
 
 def player_inputs(ctx):
@@ -222,6 +259,7 @@ def team_data(ctx, team: str) -> dict | None:
             "vs_styles": schemes.record_vs_styles(c, season, team, prof_all),
             "film": _film(c, team, prof.get("labels", [])),
             "ato": ato_profiles(ctx).get(team), "ato_league": ato_profiles(ctx).get("_league"),
+            "weaknesses": weaknesses_all(ctx).get(team, []),
             "recent": recent, "upcoming": upcoming, "kinds": list(schemes.KINDS), "zones": list(schemes.ZONES)}
 
 

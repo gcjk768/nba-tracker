@@ -68,6 +68,14 @@ def cmd_team(ctx, args):
             lines.append("🟢 " + tp.e("; ".join(v["strengths"][:3])))
         if v.get("weaknesses"):
             lines.append("🔴 " + tp.e("; ".join(v["weaknesses"][:3])))
+    try:
+        from . import web
+        W = web.weaknesses_all(ctx).get(t, [])[:3]
+    except Exception:
+        W = []
+    if W:
+        lines += ["", "🎯 <b>How to beat them</b>"] + [f"   {tp.e(w['area'])}: <i>{tp.e(w['evidence'])}</i>. {tp.e(w['exploit'])}"
+                                                      + (f" ({tp.e(', '.join(w['plays'][:3]))})" if w['plays'] else "") + (" <i>(trade-off: their D is top 10)</i>" if w.get("tradeoff") else "") for w in W]
     out = [f"{tp.e(g['away'])} @ {tp.e(g['home'])} {jobs.tip_sgt(g['tip_utc'])}" for g in nxt]
     if out:
         lines += ["", "📅 Next: " + "  ·  ".join(out)]
@@ -290,7 +298,8 @@ def cmd_help(ctx, args):
                       "<code>/team BOS</code> · <code>/compare BOS NY</code> · <code>/whatif BOS -Tatum</code>",
                       "<code>/player Tatum</code> · <code>/status BOS</code> · <code>/game today</code> · <code>/game LAL BOS</code>",
                       "<code>/scorecard</code> · <code>/ask …</code> · <code>/plays BOS</code> · <code>/film BOS</code>",
-                      f"<i>/ask and /whatif: {ctx.s.ask_limit} a day combined.</i>"])
+                      f"<i>/ask and /whatif: {ctx.s.ask_limit} a day combined.</i>",
+                      f"📊 <a href=\"{tp.e(ctx.s.dashboard_url)}\">Dashboard</a>"])
 
 
 COMMANDS = {"team": cmd_team, "compare": cmd_compare, "whatif": cmd_whatif, "player": cmd_player, "status": cmd_status,

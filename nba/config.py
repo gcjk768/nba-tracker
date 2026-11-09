@@ -24,6 +24,7 @@ class Settings:
     model_ask: str
     vault_name: str           # Obsidian vault name for obsidian:// links
     vault_prefix: str         # folder of this app inside that vault ("" if the vault root is the app)
+    dashboard_url: str = "http://<LAN_IP>:8795"
 
     @property
     def db_path(self):
@@ -47,4 +48,5 @@ def load() -> Settings:
         model_ask=os.environ.get("CLAUDE_MODEL_ASK", "claude-haiku-5-5"),
         vault_name=os.environ.get("OBSIDIAN_VAULT_NAME", "Obsidian"),        # /volume1/<USER>/Obsidian
         vault_prefix=os.environ.get("OBSIDIAN_VAULT_PREFIX", "NBA Tracker"),  # this app's folder in it
+        dashboard_url=os.environ.get("DASHBOARD_URL", "http://<LAN_IP>:8795"),
     )

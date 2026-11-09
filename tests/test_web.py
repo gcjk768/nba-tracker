@@ -23,3 +23,10 @@ def test_history_fills_past_days(ctx):
     dates = [r[0] for r in ctx.conn.execute("select distinct date from sims where kind='daily' order by date")]
     assert n == 2 and dates == ["2026-11-09", "2026-11-10", "2026-11-11"]
     assert jobs.rebuild_history(ctx, n=500) == 0                         # idempotent
+
+
+def test_each_conference_filter_is_scoped_to_its_section():
+    from pathlib import Path
+    html = Path(__file__).resolve().parent.parent.joinpath("nba", "dashboard.html").read_text(encoding="utf-8")
+    assert 'querySelectorAll(".seg button")' not in html          # a page-wide selector made two filters fight
+    assert '#s-styles .seg button' in html and '#pbSeg button' in html

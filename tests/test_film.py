@@ -77,3 +77,38 @@ def test_budget_and_contradictions():
     clash = si.contradictions([{"team": "CHI", "label": "switch", "url": "u", "summary": ""}],
                               {"CHI": [{"label": "Concedes the mid-range (drop-style)"}]})
     assert clash and clash[0]["inferred"].startswith("Concedes")
+
+
+def test_pick_explainer_prefers_matching_title_and_channel():
+    items = [{"title": "Spain Defense: Guard To Guard Switch", "url": "u0", "author": "X", "raw": {"duration": 14}},
+             {"title": "The Basics of Spain Pick & Roll", "url": "u1", "author": "Hooper University", "raw": {"duration": 220}},
+             {"title": "Spain pick and roll compilation 2 hours", "url": "u2", "author": "Y", "raw": {"duration": 7200}}]
+    assert si.pick_explainer(items, "spain pick-and-roll", "set")["url"] == "u1"
+    assert si.pick_explainer(items, "horns", "set") is None
+
+
+def test_counter_kb_is_consistent():
+    from nba import playbook_kb as kb
+    for key, (ctrs, why) in kb.COUNTERS.items():
+        assert why and ctrs
+        assert all(c in kb.PLAYS for c in ctrs), (key, [c for c in ctrs if c not in kb.PLAYS])
+
+
+def test_pick_explainer_rejects_wrong_sport_and_wrong_play():
+    items = [{"title": "How To Switch Stick and User Defend in College Football 27", "url": "f", "author": "G", "raw": {"duration": 484}},
+             {"title": "Switching ball screens: NBA defense explained", "url": "ok", "author": "Z", "raw": {"duration": 300}}]
+    assert si.pick_explainer(items, "switch", "coverage")["url"] == "ok"
+    spain = [{"title": "The Basics of Spain Pick & Roll", "url": "s", "author": "Hooper University", "raw": {"duration": 220}}]
+    assert si.pick_explainer(spain, "pick-and-roll", "action") is None
+
+
+def test_scout_weaknesses_on_real_games(conn):
+    from nba import collector, schemes, scout
+    collector.collect_date(conn, FakeClient(), "2026-11-08", 2027)
+    P = schemes.team_profiles(conn, 2027, {})
+    W = scout.weaknesses(conn, 2027, P)
+    from nba import playbook_kb as kb
+    for t, ws in W.items():
+        for w in ws:
+            assert w["area"] and w["exploit"] and w["evidence"] and w["source"].startswith("measured")
+            assert all(x in kb.PLAYS for x in w["plays"]), w["plays"]

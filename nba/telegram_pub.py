@@ -14,7 +14,7 @@ SECTION_TITLES = {
     "fail": "❌", "team": "🏀", "compare": "⚔️", "scorecard": "🎯", "player": "👤", "ask": "💬", "game": "🏀",
     "film": "🎬", "plays": "📋", "wrap": "🏁",
 }
-DROP_ORDER = ("movers", "record", "impact", "status")      # dropped in this order when a digest is too long
+DROP_ORDER = ("movers", "record", "impact", "status")      # matchup keys never drop: they split into a 2nd message      # dropped in this order when a digest is too long
 
 
 def e(v) -> str:
@@ -130,6 +130,24 @@ def tonight_block(preds: list[dict]) -> str:
         mk = f" · mkt {pct(p['market_wp'] if fav == p['home'] else 1 - p['market_wp'])}" if p.get("market_wp") is not None else ""
         lines.append(f"<b>{e(p['away'])} @ {e(p['home'])}</b> · {e(fav)} {pct(wp)}{mk} · <i>{e(p.get('tip_sgt', ''))}</i>")
     return "\n".join(lines)
+
+
+def matchup_block(preds: list[dict], weak: dict) -> str:
+    """Tonight's games: the opponent's top measured weakness and the play that attacks it, for each side."""
+    lines = [title("tonight", "Matchup keys", "how each side can win")]
+    for p in preds:
+        a, h = p["away"], p["home"]
+        rows = []
+        for att, dfn in ((a, h), (h, a)):
+            w = (weak.get(dfn) or [None])[0]
+            if w:
+                plays = ", ".join(w.get("plays", [])[:2])
+                rows.append(f"   🎯 <b>{e(att)}</b>: {e(w['exploit'].lower())}" + (f" ({e(plays)})" if plays else "")
+                            + f" · <i>{e(dfn)} {e(w['area'].lower())}</i>")
+        if rows:
+            lines.append(f"<b>{e(a)} @ {e(h)}</b>")
+            lines += rows
+    return "\n".join(lines) if len(lines) > 1 else ""
 
 
 def record_block(sc: dict) -> str:

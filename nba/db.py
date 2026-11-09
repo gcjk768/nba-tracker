@@ -66,6 +66,7 @@ create table if not exists film_items(
   id integer primary key autoincrement, game_id text, date text, team text, kind text, label text, who text,
   summary text, url text, title text, channel text, created text, unique(game_id, team, label, url));
 create table if not exists film_videos(url text primary key, game_id text, status text, checked text);
+create table if not exists play_videos(label text primary key, url text, title text, channel text, duration int, checked text);
 create table if not exists film_games(game_id text primary key, status text, checked text);
 
 create table if not exists futures(date text, team text, american real, implied real, primary key(date, team));

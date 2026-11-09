@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 from . import analyst, db, espn
 
 log = logging.getLogger(__name__)
-BUDGET = {"search": 12, "read": 12, "subtitle": 6, "web_search": 8, "web_read": 10}
+BUDGET = {"search": 30, "read": 12, "subtitle": 6, "web_search": 8, "web_read": 10}
 # seconds between calls of the same kind. YouTube's caption endpoint 429'd the home IP after ~1 pull per few minutes
 # (2026-11-09: 3 tests), so subtitles are spaced 150 s; a nightly pass takes about 15 minutes.
 SPACING = {"search": 11, "read": 4, "subtitle": 150, "web_search": 4, "web_read": 4}
@@ -280,3 +280,76 @@ def _host(url):
     m = re.match(r"https?://(?:www\.)?([^/]+)", url)
     return m.group(1) if m else url
 
+
+
+# ---------- explainer videos: what each play / coverage looks like ----------
+
+EXPLAINER_CHANNELS = ("Basketball Immersion", "BBALLBREAKDOWN", "Hooper University", "NBArtv", "The Film Room", "Coach Daniel",
+                      "Thinking Basketball", "Basketball Orbit", "Buckets Basketball", "The Princeton Coach", "Half Court Hoops")
+_SYN = {"pick-and-roll": "pick roll", "pick-and-pop": "pick pop", "dho": "handoff", "dribble handoff": "handoff", "5-out": "5 out",
+        "2-3 zone": "2-3 zone", "box-and-one": "box one", "rip dho": "handoff", "zoom action": "zoom"}
+
+
+def _tokens(label):
+    base = _SYN.get(label, label)
+    for word in ("-and-", "-"):
+        base = base.replace(word, " ")
+    return [w for w in base.lower().split() if len(w) > 1 or w.isdigit()]
+
+
+NOT_BASKETBALL = re.compile(r"football|madden|soccer|fifa|hockey|nhl|nfl|baseball|volleyball|2k\d|nba 2k|fortnite|valorant|stick and user", re.I)
+NEEDS_CONTEXT = {   # short or generic names: the title must also show it is the basketball play
+    "switch": ("defens", "switching", "screen", "pick"), "peja": ("action", "set", "play", "screen", "handoff"),
+    "lob": ("lob play", "lob set", "ato", "out of bounds", "alley", "lob action"), "chicago": ("action", "handoff", "pin down", "set play"), "wide": ("screen", "action", "set"), "delay": ("offense", "set", "action"),
+    "drop": ("coverage", "defens", "pick"), "ice": ("coverage", "defens", "pick", "screen"), "blitz": ("pick", "trap", "defens"),
+    "hedge": ("coverage", "defens", "pick", "screen"), "zone": ("defens", "basketball", "offense"), "flare": ("screen", "set", "play"),
+}
+MORE_SPECIFIC = ("spain", "empty side", "inverted", "drag", "horns", "short roll")
+
+
+def pick_explainer(items, label, kind):
+    toks = _tokens(label)
+    best, best_score = None, 0
+    for it in items or []:
+        title = (it.get("title") or "").lower().replace("&", "and").replace("-", " ")
+        raw = it.get("raw") if isinstance(it.get("raw"), dict) else {}
+        dur = raw.get("duration") or 0
+        if not all(t in title for t in toks) or (dur and not 45 <= dur <= 1000) or NOT_BASKETBALL.search(title):
+            continue
+        if label in NEEDS_CONTEXT and not any(w in title for w in NEEDS_CONTEXT[label]):
+            continue
+        if any(w in title and w not in label for w in MORE_SPECIFIC):
+            continue
+        score = 3 + 2 * ((it.get("author") or "") in EXPLAINER_CHANNELS)
+        score += any(w in title for w in ("explained", "breakdown", "basics", "playbook", "how to"))
+        score -= kind == "coverage" and "offense" in title and "defense" not in title
+        if score > best_score:
+            best, best_score = it, score
+    return best
+
+
+def play_videos(conn, labels, reach=None, limit=10) -> dict:
+    """Find and cache one explainer per label (YouTube search only, no subtitles). Returns {label: status}."""
+    from . import playbook_kb as kb
+    reach = reach or Reach()
+    done = {r[0] for r in conn.execute("select label from play_videos")}
+    out = {}
+    try:
+        for label in [l for l in labels if l not in done][:limit]:
+            kind = kb.PLAYS.get(label, (None,))[0] or "action"
+            q = f"{label} {'pick and roll defense coverage' if kind == 'coverage' else 'basketball'} {'action explained' if label in NEEDS_CONTEXT else 'explained'}"
+            it = pick_explainer(reach("search", q, "--limit", "8"), label, kind)
+            raw = (it or {}).get("raw") if isinstance((it or {}).get("raw"), dict) else {}
+            with db.LOCK:
+                conn.execute("insert or replace into play_videos(label, url, title, channel, duration, checked) values (?,?,?,?,?,?)",
+                             (label, (it or {}).get("url"), (it or {}).get("title"), (it or {}).get("author"), raw.get("duration"),
+                              datetime.now(timezone.utc).isoformat(timespec="seconds")))
+            out[label] = "found" if it else "none"
+    except Stop as e:
+        out["_stop"] = str(e)
+    return out
+
+
+def video_map(conn) -> dict:
+    return {r["label"]: {"url": r["url"], "title": r["title"], "channel": r["channel"], "duration": r["duration"]}
+            for r in conn.execute("select * from play_videos where url is not null")}

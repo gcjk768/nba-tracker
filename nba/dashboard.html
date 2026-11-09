@@ -196,6 +196,32 @@ td.r, th.r { text-align: right; }
 .sc.rep { border-color: var(--accent); color: var(--accent); }
 .sel { font: inherit; font-size: 13px; color: var(--ink); background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 5px 8px; }
 
+/* what beats what + play panel */
+.wbgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
+@media (max-width: 440px) { .wbgrid { grid-template-columns: 1fr; } }
+.wb { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; display: grid; gap: 10px; align-content: start; }
+.wbh { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.wbh .sc { font-size: 15px; font-weight: 650; color: var(--ink); border-color: var(--line-2); padding: 4px 12px; }
+.wbh .muted { font-size: 11px; }
+.wb p { margin: 0; font-size: 13px; color: var(--ink-2); }
+.row3 { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: start; font-size: 12px; }
+.row3 .lab { color: var(--ink-3); padding-top: 3px; }
+.kv { display: inline-block; margin: 0 10px 4px 0; } .kv b { font-weight: 600; color: var(--ink); }
+button.sc { font: inherit; font-size: 12px; background: transparent; cursor: pointer; }
+.sc[data-play], .sc[data-open] { cursor: pointer; }
+.sc[data-play]:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+dialog.pdlg { padding: 0; border: 1px solid var(--line-2); border-radius: 16px; width: min(760px, 96vw); max-height: 92dvh; background: var(--bg); color: var(--ink); }
+dialog.pdlg::backdrop { background: rgba(0,0,0,.5); backdrop-filter: blur(2px); }
+dialog.pdlg[open] { animation: fade .35s var(--ease); }
+dialog.pdlg .dh { position: static; margin-top: 0; padding-top: 0; }
+.vid { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #000; }
+.vid iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+.pbs.beat { border-top-color: var(--accent); }
+.pbs.beat h4 { color: var(--accent); }
+.bw { font-size: 13px; margin: 6px 0 8px; }
+.bw .bx { margin-top: 4px; color: var(--ink-2); font-size: 12px; }
+.bw .bx .sc { margin: 2px 2px 0 0; }
 /* conference standings */
 .confs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
 @media (max-width: 980px) { .confs { grid-template-columns: 1fr; } }
@@ -373,6 +399,11 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
     <div class="pbgrid" id="pbGrid"></div>
   </section>
 
+  <section class="block reveal" id="s-wbw">
+    <div class="sh"><div><h2>What beats what</h2><p>Each defense and the plays that usually break it (coaching principle), checked against this season: which shot types actually score best against the teams that play it. Tap any play to see what it is, with a video.</p></div></div>
+    <div class="wbgrid" id="wbw"></div>
+  </section>
+
   <section class="block reveal">
     <div class="sh"><div><h2>Standings by conference</h2><p>Seeds 1 to 6 go straight to the playoffs, 7 to 10 play in, 11 to 15 are in the lottery. Net rating is points per 100 possessions with a healthy rotation; odds from 10,000 simulated seasons.</p></div></div>
     <div class="confs" id="tiers"></div>
@@ -388,6 +419,7 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
 </main>
 <div class="tip" id="tip" role="tooltip"></div>
 <dialog id="drawer" aria-labelledby="dTitle"><div class="dw" id="dw"></div></dialog>
+<dialog id="playdlg" class="pdlg"><div class="dw" id="pd"></div></dialog>
 
 <script>
 const D = /*__DATA__*/null;
@@ -583,6 +615,11 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
 })();
 
 // ---------- team playbooks: what every team runs (offense, ATO, defense, named sets) ----------
+function leanKey(label) {
+  if (label.startsWith("Rim protector anchored")) return "rim protector";
+  return {"Concedes the mid-range (drop-style)": "drop", "Turnover-forcing (aggressive, traps or blitzes likely)": "turnover-forcing",
+          "Packs the paint": "pack the paint", "Runs shooters off the line": "run shooters off"}[label] || null;
+}
 (function playbooksSection() {
   const PB = D.playbooks || [], box = $("pbGrid");
   if (!PB.length) { $("s-pb").hidden = true; return; }
@@ -591,7 +628,7 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
   const rank = (lab, n) => `<span class="pr ${n && n <= 5 ? "t5" : n && n >= 26 ? "b5" : ""}" title="${lab} rank, 1 = best">${lab} ${n ? "#" + n : "n/a"}</span>`;
   const sgn = v => (v > 0 ? "+" : "") + (100 * v).toFixed(1);
   const chip = l => `<span class="sc" title="${esc(l.label)}. Inferred, confidence ${Math.round(100 * l.confidence)}%: ${esc(l.evidence)}">${esc(l.label.split(" (")[0])}</span>`;
-  const named = obj => Object.entries(obj || {}).map(([k, n]) => `<span class="sc rep" title="reported ${n} time${n > 1 ? "s" : ""}">${esc(k)}${n > 1 ? " ×" + n : ""}</span>`).join("");
+  const named = obj => Object.entries(obj || {}).map(([k, n]) => `<button class="sc rep" data-play="${esc(k)}" title="reported ${n} time${n > 1 ? "s" : ""}. Tap to see the play">${esc(k)}${n > 1 ? " ×" + n : ""}</button>`).join("");
   const card = p => {
     const o = p.offense, a = p.ato, d = p.defense, mx = Math.max(...o.mix.map(m => m.share));
     const nm = p.named || {};
@@ -599,6 +636,10 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
     return `<article class="pb" data-conf="${esc(p.conf)}">
       <header data-open="${esc(p.team)}">${logo(p.team, "md")}<div><b>${esc(NAME(p.team))}</b><span class="muted"> ${esc(p.record)}</span>
         <div class="prs">${rank("OFF", p.off_rank)}${rank("DEF", p.def_rank)}${rank("ATO", a && !a.small_sample ? a.rank : null)}</div></div></header>
+      <div class="pbs beat"><h4>How to beat them</h4>
+        ${(p.beat || []).length ? p.beat.map(w => `<div class="bw"><div><b>${esc(w.area)}</b> <span class="muted">${esc(w.evidence)}</span></div>
+          <div class="bx">${esc(w.exploit)}: ${(w.plays || []).map(x => `<button class="sc rep" data-play="${esc(x)}">${esc(x)}</button>`).join(" ")}${w.tradeoff ? ` <span class="muted">(trade-off, needs shooting)</span>` : ""}</div></div>`).join("")
+          : `<div class="muted">No clear weakness in the numbers yet: nothing ranks in the league's worst seven.</div>`}</div>
       <div class="pbs"><h4>Offense: what they run most</h4>
         ${o.mix.map(m => `<div class="mx"><span>${esc(m.kind)}</span><span class="tr"><span class="f" data-w="${100 * m.share / mx}" style="background:${teamColor(p.team)}" data-tc="${esc(p.team)}"></span></span>
           <span class="num">${pct(m.share)}</span><span class="num ${m.vs_lg >= 0 ? "up" : "down"}" title="vs league average, percentage points">${sgn(m.vs_lg)}</span></div>`).join("")}
@@ -613,7 +654,9 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
       <div class="pbs"><h4>Defense</h4>
         <div class="chips">${d.styles.map(chip).join("") || `<span class="muted">no clear scheme lean</span>`}</div>
         <div class="meta">Opponents: rim shots ${pct(d.rim_rate)} · 3PA ${pct(d.three_rate)} · ${d.pps.toFixed(2)} pts/shot · forces turnovers ${d.forced_tov_pct}th pct${d.top_blocker ? ` · anchor ${esc(d.top_blocker)}` : ""}</div>
-        ${covs ? `<div class="chips">${covs}</div>` : ""}</div>
+        ${covs ? `<div class="chips">${covs}</div>` : ""}
+        ${(() => { const keys = [...new Set([...d.styles.map(l => leanKey(l.label)), ...Object.keys(nm.coverage || {})].filter(k => k && (D.kb || {}).counters && D.kb.counters.find(c => c.key === k)))];
+          return keys.length ? `<div class="meta">How to attack it: ${keys.map(k => { const c = D.kb.counters.find(x => x.key === k); return c.counters.slice(0, 3).map(x => `<button class="sc" data-play="${esc(x)}">${esc(x)}</button>`).join(" "); }).join(" ")}</div>` : ""; })()}</div>
       <div class="pbs last"><h4>Named sets and coverages <span class="muted" style="font-weight:400">reported</span></h4>
         <div class="chips">${sets || covs ? sets + covs : `<span class="muted">Nothing reported yet. The film room checks breakdowns, pressers and articles nightly.</span>`}</div></div>
     </article>`;
@@ -629,6 +672,49 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
     const key = e.target.value, val = p => key === "ato" ? (p.ato && !p.ato.small_sample ? p.ato.rank : 99) : p[key + "_rank"];
     PB.slice().sort((a, b) => val(a) - val(b)).forEach(p => box.appendChild(box.querySelector(`.pb header[data-open="${p.team}"]`).parentElement));
   };
+})();
+
+// ---------- what beats what + play explainer panel ----------
+const KB = D.kb || {plays: {}, counters: [], videos: {}};
+function ytId(url) { const m = String(url || "").match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/); return m ? m[1] : null; }
+function openPlay(label) {
+  const pdlg = $("playdlg"), info = KB.plays[label] || {}, v = KB.videos[label], id = v && ytId(v.url);
+  const who = (D.playbooks || []).filter(p => Object.values(p.named || {}).some(o => o && o[label]));
+  const beats = KB.counters.filter(c => c.counters.includes(label));
+  const ctr = KB.counters.find(c => c.key === label);
+  $("pd").innerHTML = `
+    <div class="dh"><div><h2>${esc(label)}</h2><div class="sub">${esc(info.kind || "play")}${info.kind ? " · coaching definition" : ""}</div></div><button class="x" onclick="playdlg.close()">Close</button></div>
+    <p style="font-size:15px;line-height:1.55;margin:16px 0">${esc(info.desc || "A named set or action reported in a breakdown. See the source links below for how the team used it.")}</p>
+    ${id ? `<div class="vid"><iframe src="https://www.youtube-nocookie.com/embed/${id}" title="${esc(v.title)}" loading="lazy" allow="encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+      <div class="muted" style="font-size:12px;margin-top:6px">${esc(v.title)} · ${esc(v.channel || "")} · <a href="${esc(v.url)}" target="_blank" rel="noopener">open on YouTube</a></div>`
+      : `<p class="muted" style="font-size:13px">No explainer video found yet. The nightly run searches YouTube for one.</p>`}
+    ${ctr ? `<div class="dsec"><h3>What usually beats ${esc(label)}</h3><p>${esc(ctr.why)}</p><div class="chips">${ctr.counters.map(x => `<button class="sc rep plink" data-play="${esc(x)}">${esc(x)}</button>`).join("")}</div></div>` : ""}
+    ${beats.length ? `<div class="dsec"><h3>What ${esc(label)} is good against</h3><div class="chips">${beats.map(c => `<button class="sc plink" data-play="${esc(c.key)}">${esc(c.title)}</button>`).join("")}</div></div>` : ""}
+    ${who.length ? `<div class="dsec"><h3>Teams reported running it this season</h3><div class="chips">${who.map(p => `<button class="sc" data-open="${esc(p.team)}" onclick="playdlg.close()">${logo(p.team, "sm")} ${esc(p.team)}</button>`).join("")}</div></div>` : ""}`;
+  $("pd").querySelectorAll(".plink").forEach(b => b.onclick = () => openPlay(b.dataset.play));
+  if (!pdlg.open) pdlg.showModal();
+}
+$("playdlg").addEventListener("click", e => { if (e.target === $("playdlg")) $("playdlg").close(); });
+$("playdlg").addEventListener("close", () => { $("pd").innerHTML = ""; });   // stop the video when closing
+document.addEventListener("click", e => { const b = e.target.closest("[data-play]"); if (b && !b.classList.contains("plink")) { e.stopPropagation(); openPlay(b.dataset.play); } }, true);
+
+(function whatBeatsWhat() {
+  const C = KB.counters || [], box = $("wbw");
+  if (!C.length) { $("s-wbw").hidden = true; return; }
+  box.innerHTML = C.map(c => {
+    const ev = c.evidence || {};
+    const meas = ev.small_sample || !ev.kinds || !ev.kinds.length
+      ? `<span class="muted">Not enough shots against these teams yet (${ev.n || 0}).</span>`
+      : ev.kinds.slice(0, 3).map(k => `<span class="kv"><b>${esc(k.kind)}</b> <span class="num ${k.vs_lg >= 0 ? "up" : "down"}">${k.vs_lg > 0 ? "+" : ""}${k.vs_lg.toFixed(2)}</span></span>`).join("")
+        + `<span class="muted"> pts/shot vs league, ${ev.n} shots</span>`;
+    return `<article class="wb">
+      <div class="wbh"><button class="sc plink2" data-play="${esc(c.key)}">${esc(c.title)}</button><span class="muted">${esc(c.source)}</span></div>
+      <p>${esc(c.why)}</p>
+      <div class="row3"><span class="lab">Usually beaten by</span><div class="chips" style="margin:0">${c.counters.map(x => `<button class="sc rep" data-play="${esc(x)}">${esc(x)}</button>`).join("")}</div></div>
+      <div class="row3"><span class="lab">Measured this season</span><div>${meas}</div></div>
+      <div class="row3"><span class="lab">Teams who play it</span><div class="chips" style="margin:0">${(ev.teams || []).map(t => `<span class="sc" data-open="${esc(t)}">${logo(t, "sm")} ${esc(t)}</span>`).join("") || `<span class="muted">none yet</span>`}</div></div>
+    </article>`;
+  }).join("");
 })();
 
 // ---------- standings by conference ----------
@@ -788,14 +874,15 @@ $("updated").textContent = D.updated ? "Updated " + D.updated.slice(5, 16).repla
   draw();
   // conference filter: table rows hide, map logos of the other conference fade (ranks stay league-wide)
   const confOf = t => (D.rankings.find(r => r.team === t) || {}).conf;
-  document.querySelectorAll(".seg button").forEach(b => b.onclick = () => {
+  const segBtns = document.querySelectorAll("#s-styles .seg button");      // scoped: the playbooks have their own filter
+  segBtns.forEach(b => b.onclick = () => {
     const cf = b.dataset.cf;
-    document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    segBtns.forEach(x => x.setAttribute("aria-pressed", x === b));
     $("styles").querySelectorAll("tbody tr").forEach(tr => { const t = tr.querySelector("[data-open]").dataset.open; tr.hidden = cf !== "All" && confOf(t) !== cf; });
     box.querySelectorAll("[data-open]").forEach(el => { el.dataset.op = cf === "All" || confOf(el.dataset.open) === cf ? 1 : .12; if (el.style.transform !== "" && el.style.transform !== "none" && !reduced) return; el.style.opacity = el.dataset.op; });
   });
   const redraw = draw;
-  draw = () => { redraw(); const on = document.querySelector('.seg button[aria-pressed="true"]'); if (on && on.dataset.cf !== "All") on.click(); };
+  draw = () => { redraw(); const on = document.querySelector('#s-styles .seg button[aria-pressed="true"]'); if (on && on.dataset.cf !== "All") on.click(); };
 })();
 
 // ---------- team drawer: offense, defense, inferred schemes, roster with player detail ----------
@@ -864,6 +951,11 @@ async function openTeam(team, player) {
       <div><b class="num">${pct(T.playoffs)}</b><span>make playoffs</span></div>
       <div><b class="num">${se.roll10 ?? "?"}</b><span>net, last 10 games</span></div></div>
     <div class="muted" style="font-size:12px">Four factors: eFG ${pct(ff.efg, 1)} · turnovers ${pct(ff.tov, 1)} · off. rebounds ${pct(ff.orb, 1)} · FT rate ${ff.ftr ?? "?"} · 3PA share ${pct(ff.p3a)}${(se.luck_flags || []).length ? " · luck: " + esc(se.luck_flags.join(", ")) : ""}</div>
+    <div class="dsec"><h3>How to beat them</h3><p>Their measured weak spots (worst seven in the league, or well above normal) and the plays that attack them. Tap a play to see what it is.</p>
+      ${(T.weaknesses || []).length ? `<div class="labels">${T.weaknesses.map(w => `<div class="lbl"><div class="top"><span>${esc(w.area)}</span><span class="tag">${esc(w.side)} · ${esc(w.source)}</span></div>
+        <div class="ev">${esc(w.evidence)}. ${esc(w.why)}</div>${w.note ? `<div class="ev muted">${esc(w.note)}</div>` : ""}
+        <div class="ev"><b>${esc(w.exploit)}</b> ${(w.plays || []).map(x => `<button class="sc rep" data-play="${esc(x)}" style="margin:2px 2px 0 0">${esc(x)}</button>`).join("")}</div></div>`).join("")}</div>`
+        : `<p class="muted" style="font-size:13px">No clear weakness in the numbers yet.</p>`}</div>
     <div class="dsec"><h3>How they play on offense</h3><p>Measured from ESPN play-by-play. Bars are this team, the tick is the league average.</p>${lab("offense")}<div style="margin-top:14px">${off}</div></div>
     <div class="dsec"><h3>How they defend</h3><p>What opponents shoot against them, measured the same way.</p>
       ${d ? `<p style="font-size:14px;margin:0 0 12px">Opponents score <b class="num">${d.pps.toFixed(2)}</b> points per shot against them, ${ordinal(Math.round(1 + (T.pct_def.pps ?? 50) * 29 / 100))} best of 30. Defensive rating ${R.def > 0 ? "+" : ""}${R.def ?? "?"} per 100 vs average.</p>` : ""}
@@ -882,7 +974,7 @@ async function openTeam(team, player) {
     <div class="dsec"><h3>Film room</h3><p>Named sets and coverages reported in YouTube breakdowns and postgame press conferences (last 3 days of games, checked nightly). Tagged reported, with the source.</p>
       ${(() => { const F = T.film || {counts: {}, recent: []};
         if (!F.recent.length) return `<p class="muted" style="font-size:13px">Nothing reported for this team yet.</p>`;
-        const counts = Object.entries(F.counts).map(([k, v]) => `<div style="margin:4px 0"><b style="font-size:13px">${esc(k)}s</b> ${Object.entries(v).map(([l, n]) => `<span class="pill" style="color:var(--accent);margin:0 4px 4px 0;display:inline-block">${esc(l)} ×${n}</span>`).join("")}</div>`).join("");
+        const counts = Object.entries(F.counts).map(([k, v]) => `<div style="margin:4px 0"><b style="font-size:13px">${esc(k)}s</b> ${Object.entries(v).map(([l, n]) => `<button class="sc rep" data-play="${esc(l)}" style="margin:0 4px 4px 0">${esc(l)} ×${n}</button>`).join("")}</div>`).join("");
         const rows = F.recent.map(r => `<div class="lbl" style="margin-top:8px"><div class="top"><span>${esc(r.label)} <span class="muted" style="font-weight:400">${esc(r.kind)}</span></span>
           <span class="tag">reported · ${esc(r.date.slice(5))}</span></div>
           <div class="ev">${esc(r.summary)}${r.who ? " (" + esc(r.who) + ")" : ""}</div>
