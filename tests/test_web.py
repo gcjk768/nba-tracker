@@ -30,3 +30,10 @@ def test_each_conference_filter_is_scoped_to_its_section():
     html = Path(__file__).resolve().parent.parent.joinpath("nba", "dashboard.html").read_text(encoding="utf-8")
     assert 'querySelectorAll(".seg button")' not in html          # a page-wide selector made two filters fight
     assert '#s-styles .seg button' in html and '#pbSeg button' in html
+
+
+def test_reveal_observers_do_not_use_ratio_thresholds_on_tall_sections():
+    # a ratio threshold never fires on a section taller than viewport / threshold (the 30-card playbook grid)
+    from pathlib import Path
+    html = Path(__file__).resolve().parent.parent.joinpath("nba", "dashboard.html").read_text(encoding="utf-8")
+    assert "{threshold: .08}" not in html and "{threshold: .05}).observe(box)" not in html

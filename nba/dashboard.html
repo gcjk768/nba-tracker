@@ -740,7 +740,7 @@ function leanKey(label) {
   };
   box.innerHTML = PB.map(card).join("");
   const grow = () => box.querySelectorAll(".f[data-w]").forEach(f => f.style.width = f.dataset.w + "%");
-  reduced ? grow() : new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { o.disconnect(); setTimeout(grow, 100); } }, {threshold: .05}).observe(box);
+  reduced ? grow() : new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { o.disconnect(); setTimeout(grow, 100); } }, {threshold: 0}).observe(box);
   document.querySelectorAll("#pbSeg button").forEach(b => b.onclick = () => {
     document.querySelectorAll("#pbSeg button").forEach(x => x.setAttribute("aria-pressed", x === b));
     box.querySelectorAll(".pb").forEach(c => c.hidden = b.dataset.cf !== "All" && c.dataset.conf !== b.dataset.cf);
@@ -1189,7 +1189,7 @@ document.querySelectorAll("#chase .r").forEach((r, k) => { const t = Object.keys
 if ($("fav").firstElementChild) $("fav").dataset.open = Object.keys(D.title.teams).sort((a, b) => D.title.teams[b].at(-1) - D.title.teams[a].at(-1))[0];
 
 // section reveal on scroll (hierarchy: one section at a time comes into focus)
-const ro = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add("on"); ro.unobserve(e.target); } }), {threshold: .08});
+const ro = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add("on"); ro.unobserve(e.target); } }), {threshold: 0, rootMargin: "0px 0px -10% 0px"});
 document.querySelectorAll(".reveal").forEach(s => reduced ? s.classList.add("on") : ro.observe(s));
 </script>
 </body>

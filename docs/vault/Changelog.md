@@ -5,6 +5,9 @@ updated: 2026-11-09
 # Changelog
 
 ## 2026-11-09
+- Fix: the Team playbooks section stayed invisible. Its scroll-reveal used `threshold: .08` (8% of the section on screen);
+  with 30 taller cards the section is >12x the viewport, so 8% can never be visible. Reveals now fire on any pixel
+  (`threshold: 0`, bottom margin 10%). Regression test in `tests/test_web.py`.
 - Playbooks by named sets and named defenses (the owner: "playbook is not horns, triangle etc?" and "for defence shouldn't it
   be zone, 2-3, 3-2 etc?"). Team cards and the drawer now lead with **Playbook: named sets** (horns, Spain PnR, floppy,
   zipper...: times reported, sources, last seen, link) and **Defense: named schemes** grouped base (man-to-man) /
