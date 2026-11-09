@@ -5,6 +5,15 @@ updated: 2026-11-09
 # Changelog
 
 ## 2026-11-09
+- Dashboard redesign (design-taste + dataviz skills): broadcast-style dark-first page, Geist font self-hosted
+  (`nba/static/`, OFL), team logos and colours from ESPN cached in `data/` (`/logo/<TEAM>.png`), hero favourite +
+  team-colour bar-chart race, matchup cards, spoiler-safe last night, tiered standings, model strip.
+- Phase 2 pulled forward (the owner: "show all stats"): `nba/schemes.py` (shot type, zone, assisted, transition from ESPN
+  pbp; team offense/defense profiles with league percentiles; inferred scheme labels with confidence + evidence;
+  record vs opponent styles; what-wins correlations), `nba/players.py` (status, role changes, per-player shot diet,
+  last 5 with WPA). Dashboard: "Who's not at full strength", "Styles and ranks" (offense vs defense map, sortable
+  style table, what's winning), team drawer (offense, defense, record vs styles, roster with player detail).
+  Telegram `/plays` now answers with the same profile. Switching / zone / coverage type stay "not measurable".
 - Dashboard: animated web page on NAS port 8795 (`nba/web.py`, `nba/dashboard.html`, stdlib server, inline SVG + vanilla
   JS, no new deps): title-race replay, odds over time, power rankings, tonight vs market, last night behind a reveal,
   calibration, AAR causes, model changes. Palette validated (dataviz skill) light + dark. `python -m nba history` fills

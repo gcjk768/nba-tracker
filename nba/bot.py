@@ -245,8 +245,26 @@ def cmd_ask(ctx, args):
 
 
 def cmd_plays(ctx, args):
-    return tp.title("plays", "Play types and schemes") + "\n\n<i>Phase 2: inferred offensive actions and defensive schemes " \
-        "from play-by-play (NBA.com play-type data is blocked from the home network).</i>"
+    t = espn.team_code(" ".join(args))
+    if not t:
+        return "Usage: <code>/plays BOS</code>"
+    from . import aggregator as agg2, schemes
+    P = schemes.team_profiles(ctx.conn, ctx.s.espn_season, agg2.team_season(ctx.conn, ctx.s.espn_season, {}))
+    p = P.get(t)
+    if not p:
+        return "No play-by-play for that team yet."
+    o, d, lo = p["offense"], p["defense"], P["_league"]["offense"]
+    top = sorted(o["kind"].items(), key=lambda kv: -kv[1])[:4]
+    lines = [tp.title("plays", f"{t} styles", "inferred from play-by-play"), ""]
+    for side, emoji in (("offense", "🏀"), ("defense", "🛡")):
+        ls = [l for l in p["labels"] if l["side"] == side]
+        lines.append(f"{emoji} <b>{side.title()}</b>")
+        lines += [f"   {tp.e(l['label'])} <i>(inferred, {round(100 * l['confidence'])}%)</i>" for l in ls] or ["   <i>balanced, nothing stands out</i>"]
+    lines += ["", "📊 Shot diet: " + ", ".join(f"{tp.e(k)} {100 * v:.0f}% ({100 * lo.get('kind:' + k, 0):.0f})" for k, v in top),
+              f"   assisted makes {100 * o['assisted']:.0f}% · transition {100 * o['transition']:.0f}% · {o['pps']:.2f} pts/shot",
+              f"🛡 Opponents: rim {100 * d['rim_rate']:.0f}% · 3PA {100 * d['three_rate']:.0f}% · {d['pps']:.2f} pts/shot",
+              "<i>League average in brackets. Switching, zone and coverage type are not measurable from public data.</i>"]
+    return "\n".join(lines)
 
 
 def cmd_film(ctx, args):

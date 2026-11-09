@@ -292,7 +292,7 @@ def parse_injuries(j) -> list[dict]:
             ret = det.get("returnDate")
             out.append({"player_id": m.group(1) if m else a.get("displayName"), "name": a.get("displayName"),
                         "team": team, "status": injury_status(i.get("status"), i.get("shortComment")),
-                        "detail": (detail + (f", back ~{ret}" if ret else "")).strip(", ")})
+                        "detail": (detail + (f" (expected back {ret})" if ret else "")).strip()})
     return out
 
 

@@ -35,7 +35,10 @@ asyncio loop; pipelines run one at a time in a worker thread (`nba/scheduler.py`
 - `nba/telegram_pub.py` — fleet card style; "Worth watching" built only from stars + reason codes (no scores);
   results/AAR/impact behind spoilers; fits 4,000 chars (drops movers → record → impact → status, then splits).
 - `nba/obsidian_pub.py` — runtime vault `/volume1/<USER>/Obsidian/NBA Tracker/`.
-- `nba/web.py` + `nba/dashboard.html` — animated dashboard on NAS port 8795 (title race replay, odds over time, power
+- `nba/schemes.py` — shot classification from ESPN pbp, team offense/defense profiles + league percentiles, inferred
+  scheme labels (confidence ≤ 0.7, with evidence), record vs styles, what-wins correlations. `nba/players.py` — roster status,
+  role changes, per-player shot diet.
+- `nba/web.py` + `nba/dashboard.html` — animated dashboard on NAS port 8795 (team drawer at `/team/<CODE>.json`) (title race replay, odds over time, power
   rankings, tonight vs market, last night behind a reveal, calibration, AAR causes, model changes); `/data.json` too.
 - `nba/bot.py` — `/team /compare /whatif /player /status /game /scorecard /ask /plays /film /help`, `ALLOWED_USER_IDS` only.
 
