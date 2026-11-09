@@ -25,8 +25,8 @@ asyncio loop; pipelines run one at a time in a worker thread (`nba/scheduler.py`
 - `nba/scorecard.py` — accuracy, Brier, log loss, calibration, vs Elo and market.
 - `nba/review.py` — **AAR** for every miss (or |error| ≥ 15): error split into availability, shooting luck,
   free throws, turnovers, rebounding, noise (sums exactly to the error).
-- `nba/tuning.py` — walk-forward grid search after every graded slate; adopts params only if season log loss
-  drops ≥ 0.002; append-only `model_params` history. Claude never sets numbers.
+- `nba/tuning.py` — walk-forward grid search after every graded slate once ≥ 300 games exist; adopts params only if
+  season log loss drops ≥ 0.002; append-only `model_params` history. Claude never sets numbers.
 - `nba/backtest.py` — 10 seasons point in time; tuned on 2017-21, validated 2022-26.
 
 ## Output
@@ -35,6 +35,8 @@ asyncio loop; pipelines run one at a time in a worker thread (`nba/scheduler.py`
 - `nba/telegram_pub.py` — fleet card style; "Worth watching" built only from stars + reason codes (no scores);
   results/AAR/impact behind spoilers; fits 4,000 chars (drops movers → record → impact → status, then splits).
 - `nba/obsidian_pub.py` — runtime vault `/volume1/<USER>/Obsidian/NBA Tracker/`.
+- `nba/web.py` + `nba/dashboard.html` — animated dashboard on NAS port 8795 (title race replay, odds over time, power
+  rankings, tonight vs market, last night behind a reveal, calibration, AAR causes, model changes); `/data.json` too.
 - `nba/bot.py` — `/team /compare /whatif /player /status /game /scorecard /ask /plays /film /help`, `ALLOWED_USER_IDS` only.
 
 ## Schedule (SGT)

@@ -142,10 +142,10 @@ def _is_cup_final(note):
     return "cup" in n and ("championship" in n or "final" in n)
 
 
-def standings(ctx):
+def standings(ctx, before=None):
     wins, losses = {t: 0 for t in espn.TEAM_IDS}, {t: 0 for t in espn.TEAM_IDS}
-    for g in ctx.conn.execute("select * from games where season=? and season_type=2 and status='final' and home_pts is not null",
-                              (ctx.s.espn_season,)):
+    q = "select * from games where season=? and season_type=2 and status='final' and home_pts is not null"
+    for g in ctx.conn.execute(q + (" and date < ?" if before else ""), (ctx.s.espn_season,) + ((before,) if before else ())):
         if _is_cup_final(g["note"]):
             continue
         w, l = (g["home"], g["away"]) if g["home_pts"] > g["away_pts"] else (g["away"], g["home"])
@@ -184,10 +184,14 @@ def bump_state(ctx):
     db.meta_set(ctx.conn, "state_version", str(int(db.meta_get(ctx.conn, "state_version", "0")) + 1))
 
 
-def remaining_games(ctx):
-    return [(g["home"], g["away"], g["neutral"]) for g in ctx.conn.execute(
-        "select * from games where season=? and season_type=2 and status='scheduled'", (ctx.s.espn_season,))
-        if not _is_cup_final(g["note"])]
+def remaining_games(ctx, asof=None):
+    """Regular-season games still to play (as of a past date: every game on or after it, whatever happened later)."""
+    if asof:
+        rows = ctx.conn.execute("select * from games where season=? and season_type=2 and date >= ? and status!='canceled'",
+                                (ctx.s.espn_season, asof))
+    else:
+        rows = ctx.conn.execute("select * from games where season=? and season_type=2 and status='scheduled'", (ctx.s.espn_season,))
+    return [(g["home"], g["away"], g["neutral"]) for g in rows if not _is_cup_final(g["note"])]
 
 
 def postseason_state(ctx, wins):
@@ -210,16 +214,41 @@ def postseason_state(ctx, wins):
     return pi or None, series or None
 
 
-def run_sim(ctx, st, n=10000, seed=None, injuries_override=None):
+def run_sim(ctx, st, n=10000, seed=None, injuries_override=None, historical=False):
     s_reg, s_po = st["s_reg"], st["s_po"]
     if injuries_override is not None:
         st2 = state(ctx, st["asof"], injuries_override=injuries_override)
         s_reg, s_po = st2["s_reg"], st2["s_po"]
-    wins, losses = standings(ctx)
-    pi, series = postseason_state(ctx, wins)
+    asof = st["asof"] if historical else None
+    wins, losses = standings(ctx, asof)
+    pi, series = (None, None) if historical else postseason_state(ctx, wins)
     p = st["params"]
-    return simulate.simulate(s_reg, s_po, wins, losses, remaining_games(ctx), p.hca, p.sigma, n=n, seed=seed,
+    return simulate.simulate(s_reg, s_po, wins, losses, remaining_games(ctx, asof), p.hca, p.sigma, n=n, seed=seed,
                              series_state=series, playin_done=pi)
+
+
+def rebuild_history(ctx, n=5000) -> int:
+    """Fill ratings + daily sims for every past day of the season that has none (point in time, no injury data),
+    so the dashboard's title race starts on opening night. Returns the number of days written."""
+    first = ctx.conn.execute("select min(date) from games where season=? and source is not null", (ctx.s.espn_season,)).fetchone()[0]
+    if not first:
+        return 0
+    today = ctx.now_sgt().date()
+    d, done = date.fromisoformat(first) + timedelta(days=1), 0
+    while d < today:
+        key = d.isoformat()
+        if not ctx.conn.execute("select 1 from sims where kind='daily' and date=?", (key,)).fetchone():
+            st = state(ctx, key, injuries_override={})
+            with db.tx(ctx.conn):
+                for t in ratings.TEAMS:
+                    r = st["ratings"][t]
+                    db.upsert(ctx.conn, "ratings", {"date": key, "team": t, "off": r["off"], "def": r["def"], "net": r["net"],
+                                                    "prior_net": r["prior_net"], "blend_w": r["blend_w"],
+                                                    "healthy_net": r["healthy_net"], "games": r["games"]})
+            store_sim(ctx, key, "daily", run_sim(ctx, st, n=n, seed=int(key.replace("-", "")), historical=True))
+            done += 1
+        d += timedelta(days=1)
+    return done
 
 
 def store_sim(ctx, d, kind, res):

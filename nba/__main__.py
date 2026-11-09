@@ -1,4 +1,4 @@
-"""python -m nba serve | daily | weekly | injury_check | backfill | predict | tune | backtest | health"""
+"""python -m nba serve | daily | weekly | injury_check | backfill | history | predict | tune | backtest | health"""
 import asyncio
 import json
 import logging
@@ -55,6 +55,8 @@ def main(argv: list[str]) -> int:
         st = jobs.state(ctx)
         df = ratings.game_frame(ctx.conn, ctx.s.espn_season)
         print(json.dumps(tuning.tune(ctx.conn, df, st["prior"], st["params"]), indent=1, default=str))
+    elif cmd == "history":              # fill past days' ratings + title sims for the dashboard
+        print(f"{jobs.rebuild_history(ctx)} days written")
     elif cmd == "backtest":
         from . import backtest
         print(json.dumps(backtest.run(ctx), indent=1, default=str))

@@ -13,6 +13,8 @@ services:
     init: true
     # scrape-net: existing external network (the NAS has no free address pools for a new compose subnet)
     networks: [scrape-net]
+    ports:
+      - "8795:8000"   # dashboard: http://<nas-ip>:8795
     env_file: .env
     environment:
       # claude -p wrapper first on PATH: prepaid API key first, subscription token as fallback
@@ -24,6 +26,7 @@ services:
       OBSIDIAN_VAULT_PREFIX: NBA Tracker
       SEASON: "2026-27"
       ESPN_SEASON: "2027"
+      WEB_PORT: "8000"
     volumes:
       - /volume1/docker/claude-fallback:/fb:ro
       - ./data:/app/data            # SQLite, heartbeat, backtest, Elo archive, Claude CLI config
@@ -40,7 +43,7 @@ services:
     # One shot commands on the NAS:
     #   docker exec nba-tracker python -m nba daily          # run today's digest now (idempotent)
     #   docker exec nba-tracker python -m nba backtest       # 10-season backtest -> vault Model/Backtest.md
-    #   docker exec nba-tracker python -m nba predict | tune | injury_check | backfill
+    #   docker exec nba-tracker python -m nba predict | tune | injury_check | backfill | history
 networks:
   scrape-net:
     external: true

@@ -10,7 +10,10 @@ from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from . import bot, collector, db, jobs
+import os
+import urllib.request
+
+from . import bot, collector, db, jobs, web
 
 log = logging.getLogger(__name__)
 JOB_LOCK = threading.Lock()          # daily / injury / weekly never overlap; bot commands don't take it
@@ -36,6 +39,12 @@ def health_problem(data_dir: Path, now: float | None = None) -> str:
         c.close()
     except Exception as e:
         return f"database will not open: {e}"
+    port = int(os.environ.get("WEB_PORT", "8000"))
+    if port:
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=5).read()
+        except Exception as e:
+            return f"dashboard not answering on :{port} ({type(e).__name__})"
     return ""
 
 
@@ -72,6 +81,7 @@ def startup(ctx):
             if r.new_games:
                 ctx.vault.activity("📥", "backfill", f"{len(r.new_games)} games")
                 jobs.bump_state(ctx)
+            jobs.rebuild_history(ctx)            # dashboard history for any day without a sim
         except Exception:
             log.exception("startup backfill failed (the daily run retries)")
     catch_up(ctx)
@@ -96,6 +106,8 @@ async def serve(ctx):
     sched.add_job(run(jobs.weekly), CronTrigger(day_of_week="mon", hour=WEEKLY_AT[0], minute=WEEKLY_AT[1]), id="weekly", **common)
     sched.add_job(heartbeat, "interval", seconds=60, args=[hb], id="heartbeat", max_instances=1, coalesce=True)
     sched.start()
+    if port := int(os.environ.get("WEB_PORT", "8000")):
+        web.start(ctx, port)
     app = bot.build_app(ctx) if ctx.s.tg_token else None
     if app:
         await app.initialize()

@@ -32,14 +32,14 @@ PRIOR = {t: (0.0, 0.0) for t in ratings.TEAMS}
 def test_tune_adopts_better_hca(conn):
     df = _season(5.0)
     cur = tuning.Params(half_life=None, hca=1.5, sigma=12.0, b2b=0.0)
-    rep = tuning.tune(conn, df, PRIOR, cur)
+    rep = tuning.tune(conn, df, PRIOR, cur, min_games=100)
     assert rep["adopted"] and rep["params"]["hca"] > 1.5 and rep["ll_new"] < rep["ll_old"]
     assert tuning.current(conn).hca == rep["params"]["hca"]
 
 
 def test_tune_keeps_model_on_noise(conn):
     df = _season(2.5, seed=11, reps=3)
-    rep = tuning.tune(conn, df, PRIOR, tuning.Params(half_life=None, hca=2.5, sigma=12.0, b2b=0.0))
+    rep = tuning.tune(conn, df, PRIOR, tuning.Params(half_life=None, hca=2.5, sigma=12.0, b2b=0.0), min_games=100)
     assert not rep["adopted"], rep
 
 
@@ -59,3 +59,8 @@ def test_aar_causes_sum_to_error(conn):
     assert r["missed"] and r["pick"] == "BOS"
     assert abs(sum(r["causes"].values()) - r["error"]) < 0.05
     assert r["main"] == "shooting luck"
+
+
+def test_tune_waits_for_enough_games(conn):
+    rep = tuning.tune(conn, _season(5.0).head(200), PRIOR, tuning.Params(hca=1.5))
+    assert not rep["adopted"] and "need 300" in rep["reason"]

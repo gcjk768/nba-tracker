@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NBA Tracker</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb; --surface-2: #f2f1ed;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+  --seq: #2a78d6; --seq-soft: #cde2fb; --neg: #e34948; --neutral: #f0efec;
+  --good: #0ca30c; --good-text: #006300; --critical: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19; --surface-2: #232321;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+    --seq: #3987e5; --seq-soft: #184f95; --neg: #e66767; --neutral: #383835;
+    --good: #0ca30c; --good-text: #0ca30c; --critical: #d03b3b;
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface-1: #1a1a19; --surface-2: #232321;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+  --seq: #3987e5; --seq-soft: #184f95; --neg: #e66767; --neutral: #383835;
+  --good: #0ca30c; --good-text: #0ca30c; --critical: #d03b3b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body.viz-root { background: var(--page); color: var(--text-primary);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+h1 { font-size: 26px; margin: 0; letter-spacing: -0.01em; }
+h1 small { font-size: 14px; font-weight: 500; color: var(--text-secondary); margin-left: 8px; }
+.sub { color: var(--muted); font-size: 13px; }
+button, .btn { font: inherit; font-size: 13px; color: var(--text-primary); background: var(--surface-2); border: 1px solid var(--ring);
+  border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--axis); }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--seq); outline-offset: 2px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--surface-1); border: 1px solid var(--ring); border-radius: 12px; padding: 14px 16px; }
+.tile .k { color: var(--text-secondary); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.tile .v { font-size: 30px; font-weight: 650; margin-top: 2px; }
+.tile .d { color: var(--muted); font-size: 12px; }
+.grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+.card { background: var(--surface-1); border: 1px solid var(--ring); border-radius: 14px; padding: 16px 18px; min-width: 0;
+  opacity: 0; transform: translateY(10px); animation: rise .6s cubic-bezier(.2,.7,.2,1) forwards; }
+.card h2 { font-size: 16px; margin: 0 0 2px; }
+.card .note { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+.span-7 { grid-column: span 7; } .span-5 { grid-column: span 5; } .span-12 { grid-column: span 12; }
+.span-6 { grid-column: span 6; } .span-4 { grid-column: span 4; } .span-8 { grid-column: span 8; }
+@media (max-width: 900px) { .span-7, .span-5, .span-6, .span-4, .span-8 { grid-column: span 12; } }
+@keyframes rise { to { opacity: 1; transform: none; } }
+
+/* bar chart race */
+.race { position: relative; height: 330px; }
+.row { position: absolute; left: 0; right: 0; height: 28px; display: flex; align-items: center; gap: 8px;
+  transition: transform .55s cubic-bezier(.3,.8,.3,1), opacity .4s; }
+.row .lab { width: 46px; font-weight: 650; font-size: 13px; text-align: right; }
+.row .track { flex: 1; position: relative; height: 18px; }
+.row .bar { position: absolute; left: 0; top: 0; bottom: 0; background: var(--seq); border-radius: 0 4px 4px 0;
+  transition: width .55s cubic-bezier(.3,.8,.3,1); }
+.row .mkt { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text-secondary); border-radius: 1px;
+  transition: left .55s; }
+.row .val { width: 52px; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text-secondary); }
+.controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.controls input[type=range] { flex: 1; accent-color: var(--seq); }
+.controls .date { font-variant-numeric: tabular-nums; color: var(--text-secondary); font-size: 13px; min-width: 88px; text-align: right; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.legend i.tick { width: 2px; height: 12px; border-radius: 1px; background: var(--text-secondary); }
+
+/* line chart */
+svg text { fill: var(--text-secondary); font-size: 11px; font-family: inherit; }
+.gridline { stroke: var(--grid); stroke-width: 1; }
+.axis { stroke: var(--axis); stroke-width: 1; }
+.line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.draw { animation: draw 1.4s cubic-bezier(.3,.7,.2,1) forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.tip { position: fixed; pointer-events: none; background: var(--surface-2); border: 1px solid var(--ring); border-radius: 8px;
+  padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.18); opacity: 0; transition: opacity .12s; z-index: 10; }
+.tip b { display: block; margin-bottom: 4px; }
+.tip .r { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+.tip i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+
+/* tables */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  padding: 6px 6px; border-bottom: 1px solid var(--grid); }
+td { padding: 7px 6px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+tr.in { opacity: 0; transform: translateX(-6px); animation: rowin .45s ease forwards; }
+@keyframes rowin { to { opacity: 1; transform: none; } }
+td.num, th.num { text-align: right; }
+.team { font-weight: 650; } .team small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.netbar { position: relative; width: 120px; height: 12px; background: transparent; }
+.netbar .z { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--axis); }
+.netbar .b { position: absolute; top: 0; bottom: 0; transition: width .8s cubic-bezier(.3,.8,.3,1); width: 0; }
+.netbar .b.pos { left: 50%; background: var(--seq); border-radius: 0 3px 3px 0; }
+.netbar .b.neg { right: 50%; background: var(--neg); border-radius: 3px 0 0 3px; }
+details summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; margin-top: 10px; }
+
+/* tonight */
+.game { padding: 10px 0; border-bottom: 1px solid var(--grid); }
+.game:last-child { border-bottom: 0; }
+.game .top { display: flex; justify-content: space-between; font-size: 13px; }
+.split { position: relative; display: flex; height: 22px; border-radius: 6px; overflow: hidden; margin-top: 6px; background: var(--neutral); }
+.split .a, .split .h { display: flex; align-items: center; font-size: 12px; font-weight: 650; white-space: nowrap;
+  transition: width 1s cubic-bezier(.3,.8,.3,1); width: 50%; }
+.split .a { background: var(--seq-soft); color: var(--text-primary); padding-left: 8px; }
+.split .h { background: var(--seq); color: #fff; justify-content: flex-end; padding-right: 8px; margin-left: 2px; }
+.split .m { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text-primary); opacity: .75; transition: left 1s; }
+
+/* last night */
+.watch { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--grid); }
+.watch:last-child { border-bottom: 0; }
+.stars { color: var(--s4); letter-spacing: 1px; font-size: 14px; }
+.reason { color: var(--muted); font-size: 12px; }
+.score { font-variant-numeric: tabular-nums; font-weight: 650; transition: filter .35s, opacity .35s; }
+.hidden .score, .hidden .spoil { filter: blur(7px); opacity: .55; user-select: none; }
+.ok { color: var(--good-text); } .bad { color: var(--critical); }
+
+/* model */
+.bars .b { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 6px 0; }
+.bars .b span:first-child { width: 110px; color: var(--text-secondary); }
+.bars .t { flex: 1; height: 14px; }
+.bars .f { height: 100%; background: var(--seq); border-radius: 0 4px 4px 0; width: 0; transition: width .9s cubic-bezier(.3,.8,.3,1); }
+.empty { color: var(--muted); font-size: 13px; padding: 18px 0; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001s !important; transition-duration: .001s !important; }
+}
+</style>
+</head>
+<body class="viz-root">
+<div class="wrap">
+  <header>
+    <h1>NBA <span id="season"></span><small>tracker &amp; champion predictor</small></h1>
+    <div><span class="sub" id="updated"></span> <button id="theme" aria-label="Toggle light or dark theme">◐</button></div>
+  </header>
+
+  <section class="tiles" id="tiles" aria-label="Headline numbers"></section>
+
+  <div class="grid">
+    <section class="card span-7" style="animation-delay:.05s" aria-labelledby="h-race">
+      <h2 id="h-race">Title race</h2>
+      <div class="note">Championship odds from 10,000 simulated seasons, replayed day by day. The tick is the betting market.</div>
+      <div class="race" id="race" role="img" aria-label="Animated bar chart of title odds by day"></div>
+      <div class="controls">
+        <button id="play" aria-label="Play or pause">▶ Play</button>
+        <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Day">
+        <span class="date" id="raceDate"></span>
+      </div>
+      <div class="legend"><span><i style="background:var(--seq)"></i>Model title odds</span><span><i class="tick"></i>Market (DraftKings)</span></div>
+    </section>
+
+    <section class="card span-5" style="animation-delay:.12s" aria-labelledby="h-tonight">
+      <h2 id="h-tonight">Tonight's picks</h2>
+      <div class="note">Model win probability per game (bar split). The tick is the market.</div>
+      <div id="tonight"></div>
+    </section>
+
+    <section class="card span-12" style="animation-delay:.18s" aria-labelledby="h-lines">
+      <h2 id="h-lines">Title odds over time</h2>
+      <div class="note">Current top five. Hover for the day's numbers.</div>
+      <div id="lines"></div>
+      <div class="legend" id="linesLegend"></div>
+      <details><summary>Show as table</summary><div id="linesTable"></div></details>
+    </section>
+
+    <section class="card span-8" style="animation-delay:.24s" aria-labelledby="h-rank">
+      <h2 id="h-rank">Power rankings</h2>
+      <div class="note">Ranked by healthy net rating (points per 100 possessions vs an average team, full rotation).</div>
+      <div style="overflow-x:auto"><table id="rank"></table></div>
+    </section>
+
+    <section class="card span-4" style="animation-delay:.3s" aria-labelledby="h-last">
+      <h2 id="h-last">Last night</h2>
+      <div class="note" id="lastNote"></div>
+      <div id="last" class="hidden"></div>
+      <button id="reveal" style="margin-top:10px">Reveal scores</button>
+    </section>
+
+    <section class="card span-4" style="animation-delay:.36s" aria-labelledby="h-cal">
+      <h2 id="h-cal">Calibration</h2>
+      <div class="note">When the model says 70%, does the pick win 70% of the time? Dots on the line = honest.</div>
+      <div id="calib"></div>
+    </section>
+
+    <section class="card span-4" style="animation-delay:.42s" aria-labelledby="h-aar">
+      <h2 id="h-aar">After Action Review</h2>
+      <div class="note">Main cause of each missed pick.</div>
+      <div id="aar" class="bars"></div>
+      <div id="aarRecent"></div>
+    </section>
+
+    <section class="card span-4" style="animation-delay:.48s" aria-labelledby="h-tune">
+      <h2 id="h-tune">Model changes</h2>
+      <div class="note">Adopted only when they beat the current model on this season's games.</div>
+      <div id="tuning"></div>
+    </section>
+  </div>
+</div>
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script>
+const D = /*__DATA__*/null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const pct = (p, d = 0) => p == null ? "–" : (100 * p).toFixed(d) + "%";
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const NS = "http://www.w3.org/2000/svg";
+const SLOTS = ["--s1", "--s2", "--s3", "--s4", "--s5"];
+
+// theme toggle (OS default, user override wins both ways)
+$("theme").onclick = () => {
+  const r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  r.dataset.theme = dark ? "light" : "dark"; localStorage.nbaTheme = r.dataset.theme;
+};
+if (localStorage.nbaTheme) document.documentElement.dataset.theme = localStorage.nbaTheme;
+
+$("season").textContent = D.season;
+$("updated").textContent = D.updated ? "updated " + D.updated.replace("T", " ").slice(0, 16) + " SGT" : "no runs yet";
+
+// ---------- tiles ----------
+(function tiles() {
+  const s = D.scorecard || {}, t = [];
+  if (s.n) {
+    t.push(["Pick record", `${s.wins}-${s.n - s.wins}`, `${pct(s.acc)} right`]);
+    t.push(["Brier score", s.brier.toFixed(3), s.mkt_brier != null ? `market ${s.mkt_brier.toFixed(3)} · lower is better` : "lower is better"]);
+  } else {
+    t.push(["Pick record", "–", "first graded picks after tonight"]);
+  }
+  const fav = D.rankings.slice().sort((a, b) => b.title - a.title)[0];
+  if (fav) t.push(["Title favourite", fav.team, `${pct(fav.title)} model · ${pct(fav.market)} market`]);
+  t.push(["Tonight", String(D.tonight.length), D.tonight.length === 1 ? "game" : "games"]);
+  t.push(["Model", "v" + ((D.tuning[0] || {}).version || 0), `home edge ${D.params.hca} pts · spread ${D.params.sigma}`]);
+  $("tiles").innerHTML = t.map(([k, v, d]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="d">${esc(d)}</div></div>`).join("");
+})();
+
+// ---------- bar chart race ----------
+(function race() {
+  const T = D.title, dates = T.dates, teams = Object.keys(T.teams), N = 10, H = 32, box = $("race");
+  if (!dates.length) { box.innerHTML = '<div class="empty">No simulations yet.</div>'; return; }
+  const rows = {};
+  teams.forEach(t => {
+    const r = document.createElement("div"); r.className = "row";
+    r.innerHTML = `<span class="lab">${esc(t)}</span><span class="track"><span class="bar"></span><span class="mkt"></span></span><span class="val"></span>`;
+    r.style.opacity = 0; box.appendChild(r); rows[t] = r;
+  });
+  let i = 0, timer = null;
+  function frame(k) {
+    i = k; $("scrub").value = k; $("raceDate").textContent = dates[k];
+    const vals = teams.map(t => [t, T.teams[t][k] || 0]).sort((a, b) => b[1] - a[1]);
+    const max = Math.max(0.05, vals[0][1], ...teams.map(t => T.market[t] || 0).filter((_, j) => j < N)) * 1.08;
+    vals.forEach(([t, v], rank) => {
+      const r = rows[t], show = rank < N;
+      r.style.transform = `translateY(${(show ? rank : N) * H}px)`; r.style.opacity = show ? 1 : 0;
+      r.querySelector(".bar").style.width = (100 * v / max) + "%";
+      const m = T.market[t]; const mk = r.querySelector(".mkt");
+      mk.style.display = m == null || k !== dates.length - 1 ? "none" : "block"; if (m != null) mk.style.left = Math.min(99, 100 * m / max) + "%";
+      r.querySelector(".val").textContent = pct(v, 1);
+      r.title = `${t}: model ${pct(v, 1)}` + (T.market[t] != null ? ` · market ${pct(T.market[t], 1)}` : "");
+    });
+  }
+  function stop() { clearInterval(timer); timer = null; $("play").textContent = "▶ Play"; }
+  function play() {
+    if (i >= dates.length - 1) frame(0);
+    $("play").textContent = "❚❚ Pause";
+    const step = Math.max(180, Math.min(700, 9000 / dates.length));
+    timer = setInterval(() => { if (i >= dates.length - 1) return stop(); frame(i + 1); }, step);
+  }
+  $("scrub").max = dates.length - 1;
+  $("scrub").oninput = e => { stop(); frame(+e.target.value); };
+  $("play").onclick = () => timer ? stop() : play();
+  if (reduced || dates.length < 2) frame(dates.length - 1); else { frame(0); setTimeout(play, 700); }
+})();
+
+// ---------- tonight ----------
+(function tonight() {
+  const g = D.tonight, box = $("tonight");
+  if (!g.length) { box.innerHTML = '<div class="empty">No games tonight.</div>'; return; }
+  box.innerHTML = g.map((p, k) => {
+    const hw = p.home_wp, fav = hw >= .5 ? p.home : p.away;
+    return `<div class="game"><div class="top"><span><b>${esc(p.away)}</b> @ <b>${esc(p.home)}</b> · ${esc(fav)} ${pct(Math.max(hw, 1 - hw))}</span>
+      <span class="sub">${esc(p.tip_sgt)}</span></div>
+      <div class="split" data-hw="${hw}" data-mk="${p.market_wp ?? ""}" role="img" aria-label="${esc(p.away)} ${pct(1 - hw)}, ${esc(p.home)} ${pct(hw)}">
+      <span class="a">${esc(p.away)} ${pct(1 - hw)}</span><span class="h">${pct(hw)} ${esc(p.home)}</span><span class="m" style="left:50%"></span></div></div>`;
+  }).join("");
+  requestAnimationFrame(() => setTimeout(() => box.querySelectorAll(".split").forEach(s => {
+    const hw = +s.dataset.hw;
+    s.querySelector(".a").style.width = `calc(${100 * (1 - hw)}% - 1px)`;
+    s.querySelector(".h").style.width = `calc(${100 * hw}% - 1px)`;
+    const m = s.dataset.mk, mk = s.querySelector(".m");
+    if (m === "") mk.style.display = "none"; else mk.style.left = (100 * (1 - +m)) + "%";
+  }), 250));
+})();
+
+// ---------- title odds over time (lines) ----------
+(function lines() {
+  const T = D.title, dates = T.dates, box = $("lines");
+  if (dates.length < 2) { box.innerHTML = '<div class="empty">Needs at least two days of simulations.</div>'; return; }
+  const last = dates.length - 1;
+  const top = Object.keys(T.teams).sort((a, b) => T.teams[b][last] - T.teams[a][last]).slice(0, 5).sort();   // colour by team, not rank
+  const W = Math.max(320, box.clientWidth), Hh = 260, m = {l: 40, r: 56, t: 10, b: 26};
+  const max = Math.max(0.05, ...top.flatMap(t => T.teams[t])) * 1.1;
+  const x = k => m.l + (W - m.l - m.r) * k / last, y = v => m.t + (Hh - m.t - m.b) * (1 - v / max);
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${Hh}`); svg.setAttribute("width", "100%"); svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Title odds over time for the current top five teams");
+  let h = "";
+  const ticks = 4;
+  for (let j = 0; j <= ticks; j++) { const v = max * j / ticks;
+    h += `<line class="${j ? "gridline" : "axis"}" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/><text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end">${pct(v)}</text>`; }
+  const every = Math.ceil(dates.length / 6);
+  dates.forEach((d, k) => { if (k % every === 0 || k === last) h += `<text x="${x(k)}" y="${Hh - 6}" text-anchor="middle">${d.slice(5)}</text>`; });
+  top.forEach((t, s) => {
+    const pts = T.teams[t].map((v, k) => `${x(k).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    h += `<polyline class="line draw" style="stroke:var(${SLOTS[s]});animation-delay:${.15 * s}s" points="${pts}"/>`;
+    h += `<text x="${x(last) + 6}" y="${y(T.teams[t][last]) + 4}" style="fill:var(--text-primary);font-weight:650">${esc(t)}</text>`;
+  });
+  h += `<line id="xh" class="axis" y1="${m.t}" y2="${Hh - m.b}" x1="-10" x2="-10" style="stroke-dasharray:3 3"/>`;
+  svg.innerHTML = h; box.appendChild(svg);
+  svg.querySelectorAll(".draw").forEach(p => { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.style.strokeDashoffset = L; });
+  $("linesLegend").innerHTML = top.map((t, s) => `<span><i style="background:var(${SLOTS[s]})"></i>${esc(t)}</span>`).join("");
+  const tip = $("tip");
+  svg.addEventListener("mousemove", e => {
+    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width;
+    const k = Math.max(0, Math.min(last, Math.round((px - m.l) / (W - m.l - m.r) * last)));
+    svg.querySelector("#xh").setAttribute("x1", x(k)); svg.querySelector("#xh").setAttribute("x2", x(k));
+    tip.innerHTML = `<b>${dates[k]}</b>` + top.map((t, s) => [t, s]).sort((a, b) => T.teams[b[0]][k] - T.teams[a[0]][k])
+      .map(([t, s]) => `<div class="r"><span><i style="background:var(${SLOTS[s]})"></i>${esc(t)}</span><span>${pct(T.teams[t][k], 1)}</span></div>`).join("");
+    tip.style.left = Math.min(innerWidth - 180, e.clientX + 14) + "px"; tip.style.top = (e.clientY + 14) + "px"; tip.style.opacity = 1;
+  });
+  svg.addEventListener("mouseleave", () => { tip.style.opacity = 0; svg.querySelector("#xh").setAttribute("x1", -10); svg.querySelector("#xh").setAttribute("x2", -10); });
+  $("linesTable").innerHTML = `<table><tr><th>Date</th>${top.map(t => `<th class="num">${esc(t)}</th>`).join("")}</tr>` +
+    dates.map((d, k) => `<tr><td>${d}</td>${top.map(t => `<td class="num">${pct(T.teams[t][k], 1)}</td>`).join("")}</tr>`).reverse().join("") + "</table>";
+})();
+
+// ---------- power rankings ----------
+(function rank() {
+  const R = D.rankings, tb = $("rank");
+  if (!R.length) { tb.innerHTML = '<tr><td class="empty">No ratings yet.</td></tr>'; return; }
+  const lim = Math.max(8, ...R.map(r => Math.abs(r.healthy)));
+  const spark = s => {
+    if (s.length < 2) return "";
+    const lo = Math.min(...s), hi = Math.max(...s), w = 70, h = 18;
+    const pts = s.map((v, k) => `${(w * k / (s.length - 1)).toFixed(1)},${(h - 2 - (h - 4) * (v - lo) / ((hi - lo) || 1)).toFixed(1)}`).join(" ");
+    return `<svg width="${w}" height="${h}" aria-hidden="true"><polyline class="line" style="stroke:var(--seq);stroke-width:1.5" points="${pts}"/></svg>`;
+  };
+  tb.innerHTML = `<tr><th>#</th><th>Team</th><th>Rec</th><th>Healthy net</th><th class="num">Net</th><th class="num">Title</th>
+    <th class="num">Elo</th><th class="num">Market</th><th>Trend</th></tr>` + R.map((r, k) => `
+    <tr class="in" style="animation-delay:${.35 + .03 * k}s"><td>${k + 1}</td><td class="team">${esc(r.team)}<small>${esc(r.conf)}</small></td>
+    <td>${esc(r.record)}</td>
+    <td><div class="netbar" data-v="${r.healthy}" title="${r.healthy > 0 ? "+" : ""}${r.healthy}"><span class="z"></span><span class="b ${r.healthy >= 0 ? "pos" : "neg"}"></span></div></td>
+    <td class="num">${r.net > 0 ? "+" : ""}${r.net.toFixed(1)}</td><td class="num">${pct(r.title, 1)}</td>
+    <td class="num">${pct(r.elo_title, 1)}</td><td class="num">${pct(r.market, 1)}</td><td>${spark(r.spark)}</td></tr>`).join("");
+  setTimeout(() => tb.querySelectorAll(".netbar").forEach(n => { n.querySelector(".b").style.width = (50 * Math.abs(+n.dataset.v) / lim) + "%"; }), 500);
+})();
+
+// ---------- last night ----------
+(function last() {
+  const L = D.last_night, box = $("last");
+  $("lastNote").textContent = L.date ? `${L.date} (US) · ranked by how worth watching it was` : "";
+  if (!L.games.length) { box.innerHTML = '<div class="empty">No games yet.</div>'; $("reveal").style.display = "none"; return; }
+  box.innerHTML = L.games.map(g => {
+    const mark = g.pick_right == null ? "" : g.pick_right ? '<span class="ok" title="pick right">✓</span>' : '<span class="bad" title="pick wrong">✗</span>';
+    return `<div class="watch"><div><div><b>${esc(g.matchup)}</b> <span class="stars" aria-label="${g.stars} of 5">${"★".repeat(g.stars)}${"☆".repeat(5 - g.stars)}</span></div>
+      <div class="reason">${esc(g.reasons.join(", ") || "routine game")}</div><div class="reason spoil">${esc(g.top)}</div></div>
+      <div style="text-align:right"><div class="score">${g.away_pts}-${g.home_pts}${g.ot ? " OT" : ""}</div><div class="spoil">${mark}</div></div></div>`;
+  }).join("");
+  if (!D.spoiler) { box.classList.remove("hidden"); $("reveal").style.display = "none"; }
+  $("reveal").onclick = () => { box.classList.toggle("hidden"); $("reveal").textContent = box.classList.contains("hidden") ? "Reveal scores" : "Hide scores"; };
+})();
+
+// ---------- calibration ----------
+(function calib() {
+  const c = (D.scorecard || {}).calibration || [], box = $("calib");
+  if (!c.length) { box.innerHTML = '<div class="empty">Appears after the first graded picks.</div>'; return; }
+  const W = 300, H = 220, m = {l: 36, r: 10, t: 10, b: 28}, x = v => m.l + (W - m.l - m.r) * (v - .5) / .5, y = v => m.t + (H - m.t - m.b) * (1 - (v - .3) / .7);
+  let h = `<line class="axis" x1="${x(.5)}" y1="${y(.5)}" x2="${x(1)}" y2="${y(1)}" style="stroke-dasharray:4 4"/>`;
+  [.5, .6, .7, .8, .9, 1].forEach(v => { h += `<text x="${x(v)}" y="${H - 8}" text-anchor="middle">${pct(v)}</text>`; });
+  [.4, .6, .8, 1].forEach(v => { h += `<line class="gridline" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/><text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end">${pct(v)}</text>`; });
+  const maxn = Math.max(...c.map(b => b.n));
+  c.forEach((b, k) => { const r = 5 + 7 * Math.sqrt(b.n / maxn);
+    h += `<circle cx="${x(b.predicted)}" cy="${y(Math.max(.3, b.actual))}" r="0" style="fill:var(--seq);stroke:var(--surface-1);stroke-width:2;transition:r .6s ${.1 * k}s" data-r="${r}"><title>${b.bucket}: said ${pct(b.predicted)}, won ${pct(b.actual)} (${b.n} games)</title></circle>`; });
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Calibration: predicted versus actual win rate">${h}</svg>
+    <div class="sub">x: model confidence · y: how often the pick won · dot size: games</div>`;
+  setTimeout(() => box.querySelectorAll("circle").forEach(cc => cc.setAttribute("r", cc.dataset.r)), 300);
+})();
+
+// ---------- AAR + tuning ----------
+(function aar() {
+  const C = D.aar.causes, keys = Object.keys(C), box = $("aar");
+  if (!keys.length) { box.innerHTML = '<div class="empty">No missed picks reviewed yet.</div>'; }
+  else {
+    const mx = Math.max(...Object.values(C));
+    box.innerHTML = keys.map(k => `<div class="b"><span>${esc(k)}</span><span class="t"><span class="f" data-w="${100 * C[k] / mx}"></span></span><span>${C[k]}</span></div>`).join("");
+    setTimeout(() => box.querySelectorAll(".f").forEach(f => f.style.width = f.dataset.w + "%"), 400);
+  }
+  $("aarRecent").innerHTML = D.aar.recent.length ? `<details><summary>Recent reviews</summary><table>${D.aar.recent.map(a =>
+    `<tr><td>${esc(a.date)}</td><td><b>${esc(a.pick)}</b> ${pct(a.pick_wp)} vs ${esc(a.opp)}</td><td>${esc(a.main)}</td><td class="num">${(+a.error).toFixed(1)}</td></tr>`).join("")}</table></details>` : "";
+  const T = D.tuning, tb = $("tuning");
+  tb.innerHTML = T.length ? `<table>${T.map(t => `<tr><td>v${t.version}</td><td>${esc(t.when)}</td><td>${esc(t.reason)}</td></tr>`).join("")}</table>`
+    : `<div class="empty">No changes yet: starting params came from the 10-season backtest.</div>`;
+  tb.innerHTML += `<div class="sub" style="margin-top:8px">Now: home edge ${D.params.hca} pts · spread ${D.params.sigma} · back-to-back −${D.params.b2b} · recency ${D.params.half_life ?? "off"} days</div>`;
+})();
+</script>
+</body>
+</html>

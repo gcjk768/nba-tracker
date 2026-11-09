@@ -5,6 +5,14 @@ updated: 2026-11-09
 # Changelog
 
 ## 2026-11-09
+- Dashboard: animated web page on NAS port 8795 (`nba/web.py`, `nba/dashboard.html`, stdlib server, inline SVG + vanilla
+  JS, no new deps): title-race replay, odds over time, power rankings, tonight vs market, last night behind a reveal,
+  calibration, AAR causes, model changes. Palette validated (dataviz skill) light + dark. `python -m nba history` fills
+  past days so the race starts on opening night (also runs at startup). Claude Motion / Claude Dashboards checked:
+  neither can be fed live from the NAS (Motion = MP4 export; Dashboards needs a cloud warehouse) — `/data.json` can be
+  attached to a Claude Motion chat for a one-off video.
+- Tuning now waits for 300 graded games: on 146 games the walk-forward search "adopted" changes the 10-season
+  backtest rejects (noise). AAR still runs on every miss from day one.
 - Deployed to the NAS (`/volume1/docker/nba-tracker`, container healthy, 146 games backfilled); GitHub `gcjk768/nba-tracker`
   (private) via nas-sync. Bot @gcjk_nbatracker_bot created in BotFather, admin in the owner Channel (delete/pin/manage topics
   only), topic "🏀 NBA" (thread 16211); hello card posted.

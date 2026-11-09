@@ -33,7 +33,8 @@ def test_commands_answer(ctx):
     assert "<tg-spoiler>" in bot.dispatch(ctx, "game", ["PHI", "CHI"])
 
 
-def test_health(tmp_path):
+def test_health(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEB_PORT", "0")
     assert scheduler.health_problem(tmp_path) == "no scheduler heartbeat yet"
     scheduler.heartbeat(tmp_path / "heartbeat")
     assert scheduler.health_problem(tmp_path) == ""

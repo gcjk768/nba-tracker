@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 
 MIN_GAIN = 0.002
+MIN_GAMES = 300      # below this a season's games can't outvote a 10-season backtest (2026-11-09: 146 games 'adopted' noise)
 
 
 @dataclass(frozen=True)
@@ -117,7 +118,7 @@ def _injury_scale(conn, cur):
     return best, ll(cur.injury_scale), ll(best), len(rows)
 
 
-def tune(conn, df, prior, cur: "Params" = None, min_games=100) -> dict:
+def tune(conn, df, prior, cur: "Params" = None, min_games=MIN_GAMES) -> dict:
     """Search the grid walk-forward on this season's games; adopt only on a real gain. Returns a report dict."""
     cur = cur or current(conn)
     if len(df) < min_games:
