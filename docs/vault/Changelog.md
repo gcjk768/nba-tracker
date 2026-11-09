@@ -5,6 +5,16 @@ updated: 2026-11-09
 # Changelog
 
 ## 2026-11-09
+- Playbooks by named sets and named defenses (the owner: "playbook is not horns, triangle etc?" and "for defence shouldn't it
+  be zone, 2-3, 3-2 etc?"). Team cards and the drawer now lead with **Playbook: named sets** (horns, Spain PnR, floppy,
+  zipper...: times reported, sources, last seen, link) and **Defense: named schemes** grouped base (man-to-man) /
+  pick-and-roll coverage (drop, switch, hedge, blitz, ice) / help (pack the paint, tag) / zone (2-3, 3-2, 1-3-1, matchup) /
+  junk (box-and-one, triangle-and-two) / pressure (press, trap), each with what beats it. Est. success = the make rate
+  on the shots a set usually ends in (`playbook_kb.SET_TO_PLAYS`) or a defense usually gives up (`COVERAGE_GIVES`);
+  labelled with *, because public data never logs the set or defense of a possession. New `social_intel.season_videos`:
+  YouTube search + description read (no subtitles) for this season's breakdowns, one offense and one defense query
+  per team, in the nightly film rotation; "Film to watch" links. Article search now asks for zone / drop coverage too.
+  `/plays` shows named sets and defensive schemes.
 - Top 5 plays with success % (the owner: "top 5 plays they normally run and the percentage that the play succeed"):
   `nba/plays.py` turns every shot into a play (how it was created + where it ended: pull-up 3, drive to the rim, spot-up
   corner 3, cut, lob, post-up, putback...) with usage, success % (makes / attempts), points per shot, league comparison,

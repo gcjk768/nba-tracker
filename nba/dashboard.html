@@ -219,6 +219,7 @@ dialog.pdlg .dh { position: static; margin-top: 0; padding-top: 0; }
 .vid iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 
 .pbs.beat { border-top-color: var(--accent); }
+.pbs.sets h4 { color: var(--ink); font-size: 13px; }
 .pbs.beat h4 { color: var(--accent); }
 .bw { font-size: 13px; margin: 6px 0 8px; }
 .bw .bx { margin-top: 4px; color: var(--ink-2); font-size: 12px; }
@@ -660,6 +661,17 @@ function ctxLine(p) {
 })();
 
 // ---------- team playbooks: what every team runs (offense, ATO, defense, named sets) ----------
+const SRC = {base: "every team", inferred: "inferred", reported: "reported"};
+function schemeTable(rows, n) {
+  if (!rows.length) return "";
+  return `<table class="pt"><thead><tr><th>Scheme</th><th>Type</th><th class="r">Seen</th><th class="r" title="Opponents' make rate vs them on the shots this scheme tends to give up (league in brackets)">Gives up*</th><th>Beat it with</th></tr></thead><tbody>
+    ${rows.slice(0, n).map(x => `<tr><td><button class="sc rep" data-play="${esc(x.label)}" title="${esc(x.desc || "")}">${esc(x.label)}</button></td>
+      <td class="muted">${esc(x.group)}</td>
+      <td class="r num">${x.source === "reported" ? `${x.mentions}× <a href="${esc(x.url)}" target="_blank" rel="noopener" class="muted">src</a>` : `<span class="muted">${SRC[x.source]}</span>`}</td>
+      <td class="r num ${x.estimate ? (x.estimate.success <= x.estimate.lg ? "up" : "down") : ""}" title="${x.estimate ? esc(x.estimate.plays.join(", ")) + " (" + x.estimate.att + " shots)" : ""}">${x.estimate ? `${pct(x.estimate.success)}* <span class="muted">(${pct(x.estimate.lg)})</span>` : ""}</td>
+      <td>${x.counters.map(c => `<button class="sc" data-play="${esc(c)}">${esc(c)}</button>`).join(" ")}</td></tr>`).join("")}</tbody></table>
+    <div class="meta">* Estimated: how often opponents make the shots this scheme usually gives up, against them (green = stingier than league). Public data does not log which defense was played on each possession.</div>`;
+}
 function leanKey(label) {
   if (label.startsWith("Rim protector anchored")) return "rim protector";
   return {"Concedes the mid-range (drop-style)": "drop", "Turnover-forcing (aggressive, traps or blitzes likely)": "turnover-forcing",
@@ -685,7 +697,18 @@ function leanKey(label) {
         ${(p.beat || []).length ? p.beat.map(w => `<div class="bw"><div><b>${esc(w.area)}</b> <span class="muted">${esc(w.evidence)}</span></div>
           <div class="bx">${esc(w.exploit)}: ${(w.plays || []).map(x => `<button class="sc rep" data-play="${esc(x)}">${esc(x)}</button>`).join(" ")}${w.tradeoff ? ` <span class="muted">(trade-off, needs shooting)</span>` : ""}</div></div>`).join("")
           : `<div class="muted">No clear weakness in the numbers yet: nothing ranks in the league's worst seven.</div>`}</div>
-      <div class="pbs"><h4>Top 5 plays they run</h4>
+      <div class="pbs sets"><h4>Playbook: named sets <span class="muted" style="font-weight:400">reported in breakdowns</span></h4>
+        ${(p.named_sets || []).filter(x => x.kind !== "coverage").length ? `<table class="pt"><thead><tr><th>Set / action</th><th class="r">Reported</th><th class="r">Est. success</th><th class="r">Pts/shot</th></tr></thead><tbody>
+          ${p.named_sets.filter(x => x.kind !== "coverage").slice(0, 6).map(x => `<tr><td><button class="sc rep" data-play="${esc(x.label)}">${esc(x.label)}</button>${x.ato ? ' <span class="muted">ATO</span>' : ""}</td>
+            <td class="r num">${x.mentions}× <a href="${esc(x.url)}" target="_blank" rel="noopener" class="muted">src</a></td>
+            <td class="r num" title="${x.estimate ? "Estimated from the plays it usually ends in: " + esc(x.estimate.plays.join(", ")) + " (" + x.estimate.att + " shots)" : "no estimate"}">${x.estimate ? pct(x.estimate.success) + "*" : "n/a"}</td>
+            <td class="r num">${x.estimate ? x.estimate.pps.toFixed(2) + "*" : ""}</td></tr>`).join("")}</tbody></table>
+          <div class="meta">* Estimated: how often the plays this set usually ends in go in for them. No public data logs which set each possession was.</div>`
+          : `<div class="muted" style="font-size:13px">No breakdown naming their sets found yet. The nightly film room keeps searching articles and YouTube.</div>`}
+        ${(p.named_sets || []).filter(x => x.kind === "coverage").length ? `<div class="meta">Defensive coverages reported: ${p.named_sets.filter(x => x.kind === "coverage").map(x => `<button class="sc rep" data-play="${esc(x.label)}">${esc(x.label)}</button>`).join(" ")}</div>` : ""}
+        ${(p.film_videos || []).length ? `<div class="meta">Film to watch: ${p.film_videos.slice(0, 3).map(v => `<a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.title.slice(0, 48))}</a> <span class="muted">(${esc(v.channel)})</span>`).join(" · ")}</div>` : ""}
+      </div>
+      <div class="pbs"><h4>Top 5 plays they run (measured: how each possession ended)</h4>
         <table class="pt"><thead><tr><th>Play</th><th class="r">Used</th><th class="r">Success</th><th class="r">Pts/shot</th><th class="r">Rank</th></tr></thead><tbody>
         ${(p.top_plays || []).map(r => `<tr><td><button class="sc plink3" data-play="${esc(r.explain)}">${esc(r.play)}</button></td>
           <td class="r num">${pct(r.share)}</td>
@@ -702,14 +725,16 @@ function leanKey(label) {
           ${(p.ato_plays && p.ato_plays.plays.length) ? `<div class="meta">Top ATO plays: ${p.ato_plays.plays.slice(0, 3).map(r => `<b>${esc(r.play)}</b> ${pct(r.share)} (${pct(r.success)} in${r.small_sample ? ", few" : ""})`).join(" · ")}</div>` : ""}
           <div class="chips">${named(a.named) || `<span class="muted">no named ATO set reported yet</span>`}</div>`
           : `<div class="muted">No after-timeout possessions yet.</div>`}</div>
-      <div class="pbs"><h4>Defense</h4>
+      <div class="pbs"><h4>Defense: named schemes</h4>
+        ${schemeTable(p.def_schemes || [], 6)}
+        ${(p.def_schemes || []).some(x => x.group === "zone" || x.group === "junk") ? "" : `<div class="meta">Zone (2-3, 3-2, 1-3-1, box-and-one): none reported this season. Most NBA teams play zone only now and then; the film room keeps looking.</div>`}
         <div class="chips">${d.styles.map(chip).join("") || `<span class="muted">no clear scheme lean</span>`}</div>
         <div class="meta">Opponents: rim shots ${pct(d.rim_rate)} · 3PA ${pct(d.three_rate)} · ${d.pps.toFixed(2)} pts/shot · forces turnovers ${d.forced_tov_pct}th pct${d.top_blocker ? ` · anchor ${esc(d.top_blocker)}` : ""}</div>
         ${(p.top_allowed || []).length ? `<div class="meta">Plays opponents run most against them: ${p.top_allowed.map(r => `<b>${esc(r.play)}</b> ${pct(r.share)}, ${pct(r.success)} in${r.rank ? ` (#${r.rank} D)` : ""}`).join(" · ")}</div>` : ""}
         ${covs ? `<div class="chips">${covs}</div>` : ""}
         ${(() => { const keys = [...new Set([...d.styles.map(l => leanKey(l.label)), ...Object.keys(nm.coverage || {})].filter(k => k && (D.kb || {}).counters && D.kb.counters.find(c => c.key === k)))];
           return keys.length ? `<div class="meta">How to attack it: ${keys.map(k => { const c = D.kb.counters.find(x => x.key === k); return c.counters.slice(0, 3).map(x => `<button class="sc" data-play="${esc(x)}">${esc(x)}</button>`).join(" "); }).join(" ")}</div>` : ""; })()}</div>
-      <div class="pbs last"><h4>Named sets and coverages <span class="muted" style="font-weight:400">reported</span></h4>
+      <div class="pbs last" hidden><h4>Named sets and coverages <span class="muted" style="font-weight:400">reported</span></h4>
         <div class="chips">${sets || covs ? sets + covs : `<span class="muted">Nothing reported yet. The film room checks breakdowns, pressers and articles nightly.</span>`}</div></div>
     </article>`;
   };
@@ -1123,6 +1148,13 @@ async function openTeam(team, player) {
     ${(T.vs_styles || []).length ? `<div class="dsec"><h3>Record against styles</h3><p>Results against opponents grouped by the opponent's inferred style. Small samples early in the season.</p>
       <table><thead><tr><th>Opponent style</th><th class="r">Games</th><th class="r">Record</th><th class="r">Avg margin</th></tr></thead><tbody>${T.vs_styles.map(v =>
         `<tr><td>${esc(v.style)}</td><td class="r num">${v.games}</td><td class="r num">${esc(v.record)}</td><td class="r num ${v.avg_margin >= 0 ? "up" : "down"}">${v.avg_margin > 0 ? "+" : ""}${v.avg_margin}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    ${(T.def_schemes || []).length ? `<div class="dsec"><h3>Defense: named schemes</h3><p>Base defense, pick-and-roll coverage, zones and pressure, with what beats each. Hover a "Beat it with" chip or click it for the explainer.</p>${schemeTable(T.def_schemes, 20)}
+      ${T.def_schemes.filter(x => x.why).map(x => `<div class="ev"><b>${esc(x.label)}:</b> ${esc(x.why)}</div>`).join("")}</div>` : ""}
+    ${(T.named_sets || []).length ? `<div class="dsec"><h3>Playbook: named sets</h3><p>Every set, action and coverage reported for them this season. Est. success = how often the plays the set usually ends in go in for this team (not measured per set).</p>
+      <table><thead><tr><th>Set / coverage</th><th>Kind</th><th class="r">Reported</th><th class="r">Sources</th><th class="r">Last seen</th><th class="r">Est. success</th><th>Usually ends in</th></tr></thead><tbody>${T.named_sets.map(x =>
+        `<tr><td><button class="sc rep" data-play="${esc(x.label)}">${esc(x.label)}</button>${x.ato ? " <span class='muted'>ATO</span>" : ""}</td><td>${esc(x.kind)}</td><td class="r num">${x.mentions}×</td><td class="r num">${x.sources}</td>
+         <td class="r num">${esc((x.last || "").slice(5))}</td><td class="r num">${x.estimate ? pct(x.estimate.success) + "*" : "n/a"}</td><td class="muted" style="font-size:12px">${x.estimate ? esc(x.estimate.plays.join(", ")) : ""}</td></tr>`).join("")}</tbody></table>
+      ${(T.film_videos || []).length ? `<div class="ev" style="margin-top:8px"><b>Film to watch:</b> ${T.film_videos.map(v => `<a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.title)}</a> <span class="muted">${esc(v.channel)}, ${esc(v.published)}</span>`).join(" · ")}</div>` : ""}</div>` : ""}
     <div class="dsec"><h3>Film room</h3><p>Named sets and coverages reported in YouTube breakdowns and postgame press conferences (last 3 days of games, checked nightly). Tagged reported, with the source.</p>
       ${(() => { const F = T.film || {counts: {}, recent: []};
         if (!F.recent.length) return `<p class="muted" style="font-size:13px">Nothing reported for this team yet.</p>`;

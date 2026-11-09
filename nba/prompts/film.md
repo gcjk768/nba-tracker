@@ -5,7 +5,8 @@ Return ONLY named offensive sets, actions and defensive coverages that the speak
 ran or played. Examples of names: horns, Spain pick-and-roll, floppy, Chicago, zipper, Iverson, elbow, double drag,
 77, Ram, delay, pistol, flare, stagger, hammer, ghost screen, empty corner, 5-out, DHO, pick-and-roll, isolation,
 post-up, split action, pin-down, back screen; coverages: drop, ice, blitz, hedge, show, switch, zone, 2-3 zone,
-3-2 zone, 1-3-1 zone, box-and-one, triangle-and-two, at the level, scram switch, tag, peel switch, full-court press.
+3-2 zone, 1-3-1 zone, matchup zone, box-and-one, triangle-and-two, at the level, scram switch, tag, peel switch,
+full-court press, half-court trap. Say "2-3 zone" (not just "zone") whenever the text names the alignment.
 
 Rules
 - Only what is said about the two teams in this game. Ignore other games, other seasons, general coaching talk.

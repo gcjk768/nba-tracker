@@ -190,6 +190,65 @@ def plays_all(ctx) -> dict:
     return out
 
 
+def named_sets(ctx, team: str) -> list[dict]:
+    """Reported sets / actions / coverages for a team: mentions, distinct sources, last seen, and an ESTIMATED success
+    rate = how often the plays that set usually ends in go in for this team (weighted by how often they run them)."""
+    from . import playbook_kb as kb
+    rows = ctx.conn.execute("""select label, kind, count(*) n, count(distinct url) sources, max(date) last, max(url) url, max(ato) ato
+                               from film_items where team=? group by label, kind order by n desc, last desc""", (team,)).fetchall()
+    tp_ = {r["play"]: r for r in plays_all(ctx)[team]["offense"]}
+    out = []
+    for r in rows:
+        est = None
+        plays_ = kb.SET_TO_PLAYS.get(r["label"]) if r["kind"] != "coverage" else None
+        if plays_:
+            used = [tp_[p] for p in plays_ if p in tp_]
+            att = sum(u["att"] for u in used)
+            if att >= 20:
+                made = sum(u["success"] * u["att"] for u in used)
+                pts = sum(u["pps"] * u["att"] for u in used)
+                est = {"success": round(made / att, 3), "pps": round(pts / att, 3), "att": att, "plays": [u["play"] for u in used]}
+        out.append({"label": r["label"], "kind": r["kind"], "mentions": r["n"], "sources": r["sources"], "last": r["last"],
+                    "url": r["url"], "ato": bool(r["ato"]), "estimate": est})
+    return out
+
+
+def defense_schemes(ctx, team: str) -> list[dict]:
+    """Named defensive schemes for a team, grouped base / pick-and-roll / help / zone / junk / pressure.
+    Reported ones come from the film room; inferred ones from our play-by-play leans; man-to-man is every team's base.
+    est = opponents' make rate vs this team on the shots that scheme tends to give up (an estimate, not per-scheme data)."""
+    from . import playbook_kb as kb
+    allowed = {r["play"]: r for r in plays_all(ctx)[team]["defense"]}
+    rows = {"man-to-man": {"label": "man-to-man", "source": "base", "mentions": 0, "url": None}}
+    for l in profiles(ctx)[team]["labels"]:
+        k = kb.lean_key(l["label"]) if l["side"] == "defense" else None
+        if k in kb.DEF_GROUP:
+            rows[k] = {"label": k, "source": "inferred", "mentions": 0, "url": None, "confidence": l["confidence"]}
+    for x in named_sets(ctx, team):
+        if x["kind"] == "coverage":
+            rows[x["label"]] = {"label": x["label"], "source": "reported", "mentions": x["mentions"], "url": x["url"], "last": x["last"]}
+    out = []
+    for k, r in rows.items():
+        used = [allowed[p] for p in kb.COVERAGE_GIVES.get(k, []) if p in allowed]
+        att = sum(u["att"] for u in used)
+        est = None
+        if att >= 20:
+            est = {"success": round(sum(u["success"] * u["att"] for u in used) / att, 3),
+                   "lg": round(sum(u["lg_success"] * u["att"] for u in used) / att, 3), "att": att, "plays": [u["play"] for u in used]}
+        counters, why = kb.COUNTERS.get(k, ([], ""))
+        out.append({**r, "group": kb.DEF_GROUP.get(k, "other"), "desc": kb.describe(k)["desc"], "counters": counters[:3], "why": why, "estimate": est})
+    order = ["base", "pick-and-roll", "help", "zone", "junk", "pressure", "other"]
+    return sorted(out, key=lambda r: (order.index(r["group"]), r["source"] != "reported", -r["mentions"]))
+
+
+def _team_film(ctx, team):
+    from . import social_intel
+    try:
+        return social_intel.team_film(ctx.conn, team)
+    except Exception:
+        return []
+
+
 def playbooks(ctx, styles: list[dict]) -> list[dict]:
     """One card per team: what they run most on offense, after timeouts, on defense, and named sets reported."""
     from . import social_intel
@@ -220,6 +279,7 @@ def playbooks(ctx, styles: list[dict]) -> list[dict]:
                         "top_blocker": P[t]["top_blocker"]["name"] if P[t]["top_blocker"]["per_game"] >= 1.0 else None},
             "named": pb["counts"], "named_n": len(pb["recent"]),
             "beat": weaknesses_all(ctx).get(t, [])[:3],
+            "named_sets": named_sets(ctx, t), "film_videos": _team_film(ctx, t), "def_schemes": defense_schemes(ctx, t),
             "top_plays": plays_all(ctx)[t]["offense"][:5], "top_allowed": plays_all(ctx)[t]["defense"][:3],
             "ato_plays": plays_all(ctx)[t]["ato"],
         })
@@ -337,6 +397,7 @@ def team_data(ctx, team: str) -> dict | None:
             "news": _news(c, team),
             "decides": _team_decides(ctx, team),
             "plays": plays_all(ctx)[team], "plays_league": plays_all(ctx)["_league"],
+            "named_sets": named_sets(ctx, team), "film_videos": _team_film(ctx, team), "def_schemes": defense_schemes(ctx, team),
             "recent": recent, "upcoming": upcoming, "kinds": list(schemes.KINDS), "zones": list(schemes.ZONES)}
 
 

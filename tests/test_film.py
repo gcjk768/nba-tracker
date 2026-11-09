@@ -112,3 +112,19 @@ def test_scout_weaknesses_on_real_games(conn):
         for w in ws:
             assert w["area"] and w["exploit"] and w["evidence"] and w["source"].startswith("measured")
             assert all(x in kb.PLAYS for x in w["plays"]), w["plays"]
+
+
+def test_set_to_plays_uses_real_play_names():
+    from nba import playbook_kb as kb, plays
+    for label, ps in kb.SET_TO_PLAYS.items():
+        assert ps and all(p in plays.PLAY_ORDER for p in ps), (label, [p for p in ps if p not in plays.PLAY_ORDER])
+
+
+def test_defense_schemes_are_complete():
+    from nba import playbook_kb as kb, plays
+    for k, ps in kb.COVERAGE_GIVES.items():
+        assert all(p in plays.PLAY_ORDER for p in ps), k
+    for k in kb.DEF_GROUP:
+        assert k in kb.PLAYS, k
+    for k in ("2-3 zone", "3-2 zone", "1-3-1 zone", "box-and-one", "drop", "switch", "man-to-man"):
+        assert k in kb.COUNTERS, k

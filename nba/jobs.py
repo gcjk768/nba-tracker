@@ -1022,6 +1022,7 @@ def _film(ctx, key):
     res = social_intel.run(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach"),
                            claude_runner=ctx.runner)
     arts = social_intel.season_articles(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach_web"), claude_runner=ctx.runner)
+    social_intel.season_videos(ctx.conn, key, ctx.s.model_ask, claude_runner=ctx.runner, teams=arts["teams"])
     from . import playbook_kb as kb
     want = [r[0] for r in ctx.conn.execute("select label, count(*) n from film_items group by label order by n desc")]
     want += [x for k, (ctrs, _) in kb.COUNTERS.items() for x in [k] + ctrs]

@@ -274,6 +274,16 @@ def cmd_plays(ctx, args):
         lines += ["", "📋 <b>Top 5 plays</b> (used · success · league)"] + [
             f"   {tp.e(r['play'])}: {100 * r['share']:.0f}% · {100 * r['success']:.0f}% in · {100 * r['lg_success']:.0f}%"
             + (" <i>(few)</i>" if r["small_sample"] else f" · #{r['rank']}" if r.get("rank") else "") for r in PL["offense"][:5]]
+        NS = [x for x in web.named_sets(ctx, t) if x["kind"] != "coverage"][:5]
+        if NS:
+            lines += ["", "📘 <b>Named sets</b> (reported · est. success*)"] + [
+                f"   {tp.e(x['label'])}: {x['mentions']}×" + (f" · {100 * x['estimate']['success']:.0f}%*" if x["estimate"] else "") for x in NS]
+        DS = web.defense_schemes(ctx, t)
+        lines += ["", "🛡 <b>Defensive schemes</b> (gives up* · league)"] + [
+            f"   {tp.e(x['label'])} <i>({x['source']})</i>" + (f" · {100 * x['estimate']['success']:.0f}% ({100 * x['estimate']['lg']:.0f})" if x["estimate"] else "")
+            + (f" → beat with {tp.e(', '.join(x['counters']))}" if x["counters"] else "") for x in DS[:5]]
+        if not any(x["group"] in ("zone", "junk") for x in DS):
+            lines.append("   <i>No zone (2-3, 3-2, 1-3-1) reported this season.</i>")
         A = PL["ato"]
         if A["plays"]:
             lines.append(f"⏱ <b>ATO</b>: {100 * A['ends']['score']:.0f}% score · top: " + ", ".join(
@@ -283,7 +293,8 @@ def cmd_plays(ctx, args):
     lines += ["", "📊 Shot diet: " + ", ".join(f"{tp.e(k)} {100 * v:.0f}% ({100 * lo.get('kind:' + k, 0):.0f})" for k, v in top),
               f"   assisted makes {100 * o['assisted']:.0f}% · transition {100 * o['transition']:.0f}% · {o['pps']:.2f} pts/shot",
               f"🛡 Opponents: rim {100 * d['rim_rate']:.0f}% · 3PA {100 * d['three_rate']:.0f}% · {d['pps']:.2f} pts/shot",
-              "<i>League average in brackets. Switching, zone and coverage type are not measurable from public data.</i>"]
+              "<i>League average in brackets. * Estimated: public data does not log which set or defense each possession was, "
+              "so these use the shots each one usually ends in.</i>"]
     return "\n".join(lines)
 
 

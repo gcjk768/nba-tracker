@@ -33,6 +33,7 @@ SETS = {   # normalised label -> kind; anything else Claude returns is kept as "
     "show": "coverage", "switch": "coverage", "zone": "coverage", "2-3 zone": "coverage", "3-2 zone": "coverage",
     "1-3-1 zone": "coverage", "box-and-one": "coverage", "triangle-and-two": "coverage", "at the level": "coverage",
     "scram switch": "coverage", "tag": "coverage", "peel switch": "coverage", "full-court press": "coverage",
+    "matchup zone": "coverage", "man-to-man": "coverage", "half-court trap": "coverage",
 }
 CONTRADICTS = {   # reported coverage vs our inferred defense label that it argues against
     "switch": ("Concedes the mid-range (drop-style)",),
@@ -245,7 +246,7 @@ def season_articles(conn, today: str, model: str, reach=None, claude_runner=None
     try:
         for t in pick:
             name = espn.NAMES[t]
-            items = reach("web_search", f"{name} 2026-27 offense sets defensive scheme film breakdown", "--limit", "6") or []
+            items = reach("web_search", f"{name} 2026-27 offense sets, defensive scheme, zone or drop coverage, film breakdown", "--limit", "6") or []
             used = 0
             for it in items:
                 url = it.get("url") or ""
@@ -353,3 +354,59 @@ def play_videos(conn, labels, reach=None, limit=10) -> dict:
 def video_map(conn) -> dict:
     return {r["label"]: {"url": r["url"], "title": r["title"], "channel": r["channel"], "duration": r["duration"]}
             for r in conn.execute("select * from play_videos where url is not null")}
+
+
+# ---------- team film: YouTube breakdowns of a team's sets this season (search + description, no subtitles) ----------
+
+TEAM_FILM = """
+create table if not exists team_videos(team text, url text, title text, channel text, published text, labels int,
+  primary key(team, url));
+"""
+
+
+def season_videos(conn, today: str, model: str, reach=None, claude_runner=None, teams=None, per_team=2) -> dict:  # 12 reads = 6 teams
+    """For each team: find this season's breakdown / playbook videos, keep them as 'film to watch', and extract any
+    named sets from the title + description. Never pulls subtitles (those are rate-limited from the home IP)."""
+    with db.LOCK:
+        conn.executescript(TEAM_FILM)
+    reach = reach or Reach()
+    teams = list(teams or [])
+    added, stop, found = [], None, 0
+    try:
+        for t in teams:
+            nick = _nick(t)
+            items = []
+            for q in (f"{espn.NAMES[t]} offense sets playbook film breakdown 2026", f"{espn.NAMES[t]} defense zone coverage scheme breakdown 2026"):
+                items += reach("search", q, "--limit", "5") or []
+            keep = [it for it in items if _mentions(it.get("title") or "", t) and not SKIP_TITLE.search(it.get("title") or "")]
+            used = 0
+            for it in keep:
+                url = it.get("url") or ""
+                if used >= per_team or not url or conn.execute("select 1 from team_videos where team=? and url=?", (t, url)).fetchone():
+                    continue
+                meta = (reach("read", url) or [{}])[0]
+                pub = _date(meta.get("published_at"))
+                used += 1
+                if not pub or pub < date(2026, 9, 1):
+                    _video(conn, url, "", "skipped: not this season")
+                    continue
+                text = f"{it.get('title', '')}. {meta.get('text') or ''}"
+                labels = [f for f in extract(text, {"date": today, "home": t, "away": t}, url, it.get("title") or "", model,
+                                             claude_runner, prompt="film_season.md") if f["team"] == t]
+                with db.tx(conn):
+                    conn.execute("insert or replace into team_videos(team, url, title, channel, published, labels) values (?,?,?,?,?,?)",
+                                 (t, url, (it.get("title") or "")[:150], it.get("author") or "", pub.isoformat(), len(labels)))
+                    for f in labels:
+                        _store(conn, "", pub.isoformat(), f, url, it.get("author") or "")
+                _video(conn, url, "", f"done: {len(labels)} labels (description)")
+                found += 1
+                added += labels
+    except Stop as e:
+        stop = str(e)
+    return {"teams": teams, "videos": found, "added": added, "stop": stop}
+
+
+def team_film(conn, team: str, limit=6) -> list[dict]:
+    with db.LOCK:
+        conn.executescript(TEAM_FILM)
+    return [dict(r) for r in conn.execute("select * from team_videos where team=? order by published desc limit ?", (team, limit))]

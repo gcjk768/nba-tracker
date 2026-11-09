@@ -38,6 +38,7 @@ asyncio loop; pipelines run one at a time in a worker thread (`nba/scheduler.py`
 - `nba/schemes.py` — shot classification from ESPN pbp, team offense/defense profiles + league percentiles, inferred
   scheme labels (confidence ≤ 0.7, with evidence), record vs styles, what-wins correlations. `nba/players.py` — roster status,
   role changes, per-player shot diet.
+- `nba/playbook_kb.py` — named sets / defenses (what each is, `COUNTERS` = what beats it, `SET_TO_PLAYS` / `COVERAGE_GIVES` for the estimated success, `DEF_GROUP` = base / pick-and-roll / help / zone / junk / pressure); `nba/social_intel.py` `season_articles` + `season_videos` find this season's breakdowns per team; `web.named_sets` / `web.defense_schemes` feed the playbook cards, drawer and `/plays`.
 - `nba/web.py` + `nba/dashboard.html` — animated dashboard on NAS port 8795 (team drawer at `/team/<CODE>.json`) (title race replay, odds over time, power
   rankings, tonight vs market, last night behind a reveal, calibration, AAR causes, model changes); `/data.json` too.
 - `nba/bot.py` — `/team /compare /whatif /player /status /game /scorecard /ask /plays /film /help`, `ALLOWED_USER_IDS` only.

@@ -72,6 +72,15 @@ PLAYS = {
     "2-3 zone": ("coverage", "Two defenders up top, three along the baseline, guarding areas."),
     "box-and-one": ("coverage", "Four players in a zone box, one face-guarding the opponent's best scorer."),
     "full-court press": ("coverage", "Pressure the ball the length of the floor to force turnovers or burn clock."),
+    "man-to-man": ("coverage", "Each defender guards one player. The base defense of every NBA team."),
+    "3-2 zone": ("coverage", "Three defenders across the top, two near the basket. Takes away threes up top, open along the baseline."),
+    "1-3-1 zone": ("coverage", "One at the top, three across the free-throw line, one along the baseline. Traps the wings, weak in the corners."),
+    "matchup zone": ("coverage", "A zone that matches up on whoever enters each area, so it looks like man-to-man."),
+    "triangle-and-two": ("coverage", "Three defenders in a zone triangle, two face-guarding the opponent's two best scorers."),
+    "scram switch": ("coverage", "A late switch away from the ball to get a big off a small mismatch."),
+    "tag": ("coverage", "A weak-side defender bumps the rolling big, then recovers to his own man."),
+    "peel switch": ("coverage", "A defender switches onto a driver to stop him, and the rest rotate behind."),
+    "half-court trap": ("coverage", "Two defenders trap the ball near half court or in a corner to force a turnover."),
 }
 
 # what usually beats each defense type: (counters, why). Keys cover reported coverages and our inferred leans.
@@ -88,6 +97,24 @@ COUNTERS = {
             "Ice pushes the ball sideways, so the screener popping or re-screening flips the angle back to the middle."),
     "zone": (["elbow", "flare", "5-out", "split action"],
              "Flash a player to the high post or short corner, then skip the ball to the weak side for open threes."),
+    "2-3 zone": (["elbow", "5-out", "flare"],
+                 "Get the ball to the free-throw line, where no one is assigned, then hit the short corner or skip to the open wing."),
+    "3-2 zone": (["post-up", "cut", "spot-up jumper"],
+                 "Only two defenders guard the baseline, so short-corner catches, baseline cuts and corner threes are open."),
+    "1-3-1 zone": (["spot-up jumper", "cut", "5-out"],
+                   "The corners are empty: pass out of the wing trap, then hit the corner shooter or a baseline cutter."),
+    "matchup zone": (["5-out", "flare", "cut"],
+                     "Overload one side, then cut and screen through the zone so defenders have to pass players off and lose them."),
+    "box-and-one": (["stagger", "flare", "5-out"],
+                    "Screen for the star so he loses his chaser, and let the other four attack the four-man box."),
+    "triangle-and-two": (["5-out", "spot-up jumper", "cut"],
+                         "Only three guard the rest of the floor: spread out and attack the gaps around the triangle."),
+    "full-court press": (["quick action", "lob", "drive"],
+                         "Inbound fast, use the middle of the floor and throw over the top before the trap sets."),
+    "half-court trap": (["quick action", "cut", "spot-up jumper"],
+                        "Pass out of the trap early: the trap leaves a 4-on-3 behind it."),
+    "man-to-man": (["pick-and-roll", "isolation", "back screen"],
+                   "Attack the weakest defender with screens and one-on-one play until the defense has to help."),
     "pack the paint": (["spot-up jumper", "flare", "5-out", "pick-and-pop"],
                        "Help sits in the lane, so kick-outs to shooters and popping bigs get open threes."),
     "run shooters off": (["drive", "backdoor cuts", "pick-and-roll"],
@@ -115,3 +142,48 @@ def lean_key(label: str) -> str | None:
 def describe(label: str) -> dict:
     kind, desc = PLAYS.get(label, (None, None))
     return {"label": label, "kind": kind, "desc": desc}
+
+
+# Which measurable plays a named set usually ends in (for an ESTIMATED success rate, never shown as measured).
+_PNR = ["pull-up 3", "pull-up mid-range", "drive to the rim", "drive: floater / short jumper", "lob / alley-oop"]
+_OFF_SCREEN = ["spot-up corner 3", "spot-up above-break 3", "spot-up mid-range"]
+_CUTS = ["cut to the rim", "lob / alley-oop", "dump-off at the rim"]
+_POST = ["post-up / turnaround"]
+SET_TO_PLAYS = {
+    "horns": _PNR + ["spot-up above-break 3"], "spain pick-and-roll": _PNR, "pick-and-roll": _PNR, "empty-side pick-and-roll": _PNR,
+    "inverted pick-and-roll": _PNR, "double drag": _PNR, "77": _PNR, "ram": _PNR, "pistol": _PNR, "veer": _PNR,
+    "pick-and-pop": ["spot-up above-break 3", "spot-up mid-range", "pull-up 3"], "isolation": ["pull-up 3", "pull-up mid-range", "drive to the rim"],
+    "floppy": _OFF_SCREEN, "stagger": _OFF_SCREEN, "flare": _OFF_SCREEN, "empty flare": _OFF_SCREEN, "flare screen": _OFF_SCREEN,
+    "pin-down": _OFF_SCREEN, "hammer": ["spot-up corner 3", "drive to the rim"], "chicago": _OFF_SCREEN + ["drive to the rim"],
+    "zoom": _OFF_SCREEN + ["drive to the rim"], "zoom action": _OFF_SCREEN + ["drive to the rim"], "iverson": _OFF_SCREEN + ["drive to the rim"],
+    "zipper": _OFF_SCREEN + ["drive to the rim"], "double zipper": _OFF_SCREEN, "peja": _OFF_SCREEN, "wide": _OFF_SCREEN,
+    "dho": ["drive to the rim", "pull-up 3", "spot-up above-break 3"], "dribble handoff": ["drive to the rim", "pull-up 3", "spot-up above-break 3"],
+    "rip dho": ["drive to the rim", "pull-up 3"], "delay": ["drive to the rim", "cut to the rim", "spot-up above-break 3"],
+    "elbow": _POST + _CUTS, "post-up": _POST, "split action": _CUTS + _OFF_SCREEN, "split cut": _CUTS, "ucla cut": _CUTS,
+    "backdoor cuts": _CUTS, "back screen": _CUTS, "blind pig": _CUTS, "ghost screen": ["spot-up above-break 3", "drive to the rim"],
+    "5-out": ["drive to the rim", "spot-up corner 3", "spot-up above-break 3", "cut to the rim"], "motion offense": _CUTS + _OFF_SCREEN,
+    "nova": ["drive to the rim", "spot-up above-break 3", "cut to the rim"], "lob": ["lob / alley-oop"], "quick action": _PNR + _OFF_SCREEN,
+    "triangle": _POST + _CUTS + ["spot-up mid-range"],
+}
+
+
+# Defensive schemes: which group each belongs to, and which measurable shots each one tends to give up.
+DEF_GROUP = {"man-to-man": "base", "drop": "pick-and-roll", "switch": "pick-and-roll", "blitz": "pick-and-roll",
+             "hedge": "pick-and-roll", "show": "pick-and-roll", "ice": "pick-and-roll", "at the level": "pick-and-roll",
+             "scram switch": "pick-and-roll", "tag": "help", "peel switch": "help", "zone": "zone", "2-3 zone": "zone",
+             "3-2 zone": "zone", "1-3-1 zone": "zone", "matchup zone": "zone", "box-and-one": "junk", "triangle-and-two": "junk",
+             "full-court press": "pressure", "half-court trap": "pressure",
+             "pack the paint": "help", "run shooters off": "help", "rim protector": "help", "turnover-forcing": "pressure"}
+COVERAGE_GIVES = {   # opponents' make rate on these vs this team = an ESTIMATE of how the scheme holds up (never measured per scheme)
+    "drop": ["pull-up mid-range", "pull-up 3", "drive: floater / short jumper"],
+    "switch": ["post-up / turnaround", "pull-up 3", "pull-up mid-range"],
+    "blitz": ["lob / alley-oop", "dump-off at the rim", "spot-up above-break 3"],
+    "hedge": ["lob / alley-oop", "spot-up above-break 3"], "show": ["lob / alley-oop", "spot-up above-break 3"],
+    "ice": ["pull-up mid-range", "spot-up corner 3"], "at the level": ["lob / alley-oop", "dump-off at the rim"],
+    "zone": ["spot-up above-break 3", "spot-up corner 3", "spot-up mid-range"],
+    "2-3 zone": ["spot-up above-break 3", "spot-up mid-range"], "3-2 zone": ["spot-up corner 3", "post-up / turnaround", "cut to the rim"],
+    "1-3-1 zone": ["spot-up corner 3", "cut to the rim"], "matchup zone": ["spot-up above-break 3", "spot-up corner 3", "cut to the rim"],
+    "pack the paint": ["spot-up above-break 3", "spot-up corner 3"], "run shooters off": ["drive to the rim", "cut to the rim"],
+    "rim protector": ["drive to the rim", "drive: floater / short jumper"],
+    "box-and-one": ["spot-up above-break 3", "spot-up corner 3"], "triangle-and-two": ["spot-up above-break 3", "spot-up corner 3"],
+}
