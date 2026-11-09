@@ -31,3 +31,14 @@ def test_lineup_time_adds_up_to_the_game(conn):
 def test_schedule_context_and_distance():
     assert 1300 < insights.km("BOS", "CHI") < 1450          # great-circle ~1,370 km
     assert insights.ARENA["DEN"][3] > 1500
+
+
+def test_plays_cover_every_shot_and_success_is_a_rate(conn):
+    from nba import plays, schemes
+    _load(conn)
+    S = schemes.shots(conn, 2027)
+    lg = plays.league(S)
+    rows = plays.team_plays(S, "PHI", lg)
+    assert abs(sum(r["share"] for r in rows) - 1) < 0.01
+    assert sum(r["att"] for r in rows) == sum(1 for s in S if s["team"] == "PHI")
+    assert all(0 <= r["success"] <= 1 and r["play"] in plays.PLAY_ORDER for r in rows)

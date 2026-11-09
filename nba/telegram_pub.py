@@ -12,9 +12,9 @@ SECTION_TITLES = {
     "digest": "🏀", "watch": "📺", "results": "📊", "aar": "🔍", "impact": "⚡", "status": "🩹", "movers": "📈",
     "title": "🏆", "verdict": "🧠", "tonight": "🔮", "record": "🎯", "weekly": "📅", "alert": "🚨", "warn": "⚠️",
     "fail": "❌", "team": "🏀", "compare": "⚔️", "scorecard": "🎯", "player": "👤", "ask": "💬", "game": "🏀",
-    "film": "🎬", "plays": "📋", "wrap": "🏁",
+    "film": "🎬", "plays": "📋", "wrap": "🏁", "news": "📰",
 }
-DROP_ORDER = ("movers", "record", "impact", "status")      # matchup keys never drop: they split into a 2nd message      # dropped in this order when a digest is too long
+DROP_ORDER = ("movers", "record", "impact", "status", "news")      # matchup keys never drop: they split into a 2nd message      # dropped in this order when a digest is too long
 
 
 def e(v) -> str:
@@ -134,6 +134,24 @@ def tonight_block(preds: list[dict]) -> str:
         if p.get("flags"):
             lines.append(f"   ⚠️ <i>{e(p['flags'])}</i>")
     return "\n".join(lines)
+
+
+def news_block(items: list[dict], title_text="News that matters", sub=None) -> str:
+    lines = [title("news", title_text, sub)]
+    for n in items:
+        mark = "🔴" if n.get("status_implied") in ("out", "doubtful") or n["kind"] in ("suspension",) else "🟢" if n["kind"] == "return" else "⚪"
+        who = ", ".join(n.get("players") or []) or ", ".join(n.get("teams") or [])
+        tag = []
+        if n.get("tonight"):
+            tag.append("tonight")
+        if n.get("impact"):
+            tag.append(f"worth {n['impact']:.1f} pts")
+        if n.get("ahead"):
+            tag.append("ahead of the injury report")
+        link = f' · <a href="{e(n["url"])}">{e(n["source"])}</a>' if n.get("url") else f" · {e(n['source'])}"
+        lines.append(f"{mark} <b>{e(who)}</b> ({e('/'.join(n.get('teams') or []))}) · {e(n['kind'])}" + (f" · <i>{e(', '.join(tag))}</i>" if tag else ""))
+        lines.append(f"   {e(n.get('summary') or n.get('title'))}{link}")
+    return "\n".join(lines) if len(lines) > 1 else ""
 
 
 def matchup_block(preds: list[dict], weak: dict) -> str:

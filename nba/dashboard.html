@@ -223,6 +223,19 @@ dialog.pdlg .dh { position: static; margin-top: 0; padding-top: 0; }
 .bw { font-size: 13px; margin: 6px 0 8px; }
 .bw .bx { margin-top: 4px; color: var(--ink-2); font-size: 12px; }
 .bw .bx .sc { margin: 2px 2px 0 0; }
+/* news */
+.newsgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+.nw { background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
+.nw[hidden] { display: none; }
+.nw .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.nw .kd { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line-2); color: var(--ink-2); text-transform: capitalize; }
+.nw .kd.bad { color: var(--bad); border-color: currentColor; } .nw .kd.good { color: var(--good); border-color: currentColor; }
+.nw .sum { font-size: 13px; color: var(--ink); }
+.nw .meta { font-size: 12px; color: var(--ink-3); }
+.nw .flag { color: var(--accent); font-weight: 600; }
+table.pt { margin-top: 0; font-size: 12px; }
+table.pt td, table.pt th { padding: 4px 4px; }
+table.pt .sc { font-size: 12px; padding: 1px 7px; }
 /* conference standings */
 .confs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
 @media (max-width: 980px) { .confs { grid-template-columns: 1fr; } }
@@ -366,6 +379,12 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
   <section class="block reveal" id="s-tonight">
     <div class="sh"><div><h2>Tonight</h2><p id="tonightSub"></p></div></div>
     <div class="games" id="games"></div>
+  </section>
+
+  <section class="block reveal" id="s-news">
+    <div class="sh"><div><h2>News that matters</h2><p>Last 48 hours: injuries, rest, returns, trades, suspensions, lineup and coaching news, tagged and summarised. News never moves the model by itself; only the official injury report does.</p></div>
+      <div class="seg" id="newsSeg" role="group" aria-label="Filter news"><button data-f="all" aria-pressed="true">All</button><button data-f="tonight" aria-pressed="false">Tonight</button><button data-f="ahead" aria-pressed="false">Ahead of report</button></div></div>
+    <div class="newsgrid" id="newsList"></div>
   </section>
 
   <section class="block reveal" id="s-status">
@@ -666,20 +685,27 @@ function leanKey(label) {
         ${(p.beat || []).length ? p.beat.map(w => `<div class="bw"><div><b>${esc(w.area)}</b> <span class="muted">${esc(w.evidence)}</span></div>
           <div class="bx">${esc(w.exploit)}: ${(w.plays || []).map(x => `<button class="sc rep" data-play="${esc(x)}">${esc(x)}</button>`).join(" ")}${w.tradeoff ? ` <span class="muted">(trade-off, needs shooting)</span>` : ""}</div></div>`).join("")
           : `<div class="muted">No clear weakness in the numbers yet: nothing ranks in the league's worst seven.</div>`}</div>
-      <div class="pbs"><h4>Offense: what they run most</h4>
-        ${o.mix.map(m => `<div class="mx"><span>${esc(m.kind)}</span><span class="tr"><span class="f" data-w="${100 * m.share / mx}" style="background:${teamColor(p.team)}" data-tc="${esc(p.team)}"></span></span>
-          <span class="num">${pct(m.share)}</span><span class="num ${m.vs_lg >= 0 ? "up" : "down"}" title="vs league average, percentage points">${sgn(m.vs_lg)}</span></div>`).join("")}
+      <div class="pbs"><h4>Top 5 plays they run</h4>
+        <table class="pt"><thead><tr><th>Play</th><th class="r">Used</th><th class="r">Success</th><th class="r">Pts/shot</th><th class="r">Rank</th></tr></thead><tbody>
+        ${(p.top_plays || []).map(r => `<tr><td><button class="sc plink3" data-play="${esc(r.explain)}">${esc(r.play)}</button></td>
+          <td class="r num">${pct(r.share)}</td>
+          <td class="r num ${r.success >= r.lg_success ? "up" : "down"}" title="league ${pct(r.lg_success, 1)}">${pct(r.success)}</td>
+          <td class="r num">${r.pps.toFixed(2)}</td><td class="r num ${r.rank && r.rank <= 5 ? "up" : r.rank && r.rank >= 26 ? "down" : ""}">${r.small_sample ? "<span class='muted'>few</span>" : r.rank ? "#" + r.rank : ""}</td></tr>`).join("")}
+        </tbody></table>
+        <div class="meta">Success = share that went in (green = better than league). Rank = points per shot among 30 teams.</div>
         <div class="meta">assisted makes ${pct(o.assisted)} · transition ${pct(o.transition)} · 3PA ${pct(o.three_rate)} · ${o.pps.toFixed(2)} pts/shot</div>
         <div class="chips">${o.styles.map(chip).join("") || `<span class="muted">balanced, no clear lean</span>`}</div></div>
       <div class="pbs"><h4>After timeouts (ATO)</h4>
         ${a ? `<div class="ato"><b class="num">${a.ppp.toFixed(2)}</b> pts per possession ${a.small_sample ? `<span class="muted">(only ${a.n}, sample too small)</span>` : `(#${a.rank} of ${L.ranked || 30})`} · scores ${pct(a.score_rate)} · turnovers ${pct(a.tov_rate)}</div>
           <div class="meta">Usual look: <b>${esc(a.top_kind || "n/a")}</b> ${pct(a.top_kind_share)} · 3PA ${pct(a.three_rate)} · go-to: ${esc(a.go_to.join(", ") || "n/a")}</div>
           <div class="meta">Late game (last 2 min, OT): ${a.late_n ? `${a.late_ppp.toFixed(2)} on ${a.late_n}` : "none yet"} · ${a.own_n} of ${a.n} out of their own timeout</div>
+          ${(p.ato_plays && p.ato_plays.plays.length) ? `<div class="meta">Top ATO plays: ${p.ato_plays.plays.slice(0, 3).map(r => `<b>${esc(r.play)}</b> ${pct(r.share)} (${pct(r.success)} in${r.small_sample ? ", few" : ""})`).join(" · ")}</div>` : ""}
           <div class="chips">${named(a.named) || `<span class="muted">no named ATO set reported yet</span>`}</div>`
           : `<div class="muted">No after-timeout possessions yet.</div>`}</div>
       <div class="pbs"><h4>Defense</h4>
         <div class="chips">${d.styles.map(chip).join("") || `<span class="muted">no clear scheme lean</span>`}</div>
         <div class="meta">Opponents: rim shots ${pct(d.rim_rate)} · 3PA ${pct(d.three_rate)} · ${d.pps.toFixed(2)} pts/shot · forces turnovers ${d.forced_tov_pct}th pct${d.top_blocker ? ` · anchor ${esc(d.top_blocker)}` : ""}</div>
+        ${(p.top_allowed || []).length ? `<div class="meta">Plays opponents run most against them: ${p.top_allowed.map(r => `<b>${esc(r.play)}</b> ${pct(r.share)}, ${pct(r.success)} in${r.rank ? ` (#${r.rank} D)` : ""}`).join(" · ")}</div>` : ""}
         ${covs ? `<div class="chips">${covs}</div>` : ""}
         ${(() => { const keys = [...new Set([...d.styles.map(l => leanKey(l.label)), ...Object.keys(nm.coverage || {})].filter(k => k && (D.kb || {}).counters && D.kb.counters.find(c => c.key === k)))];
           return keys.length ? `<div class="meta">How to attack it: ${keys.map(k => { const c = D.kb.counters.find(x => x.key === k); return c.counters.slice(0, 3).map(x => `<button class="sc" data-play="${esc(x)}">${esc(x)}</button>`).join(" "); }).join(" ")}</div>` : ""; })()}</div>
@@ -779,6 +805,27 @@ document.addEventListener("click", e => { const b = e.target.closest("[data-play
   new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { o.disconnect(); $("decEdge").querySelectorAll(".f").forEach(x => x.style.width = x.dataset.w + "%"); } }, {threshold: .1}).observe($("decEdge"));
   const cov = Dd.lineup_coverage;
   $("decNote").textContent = `Win recipe = average points per game each factor adds to the margin (shooting, turnovers, offensive rebounds, free throws; it sums to the real margin). Shot-making = points per shot above what the shot types and zones usually yield. Opp. luck = how far opponents shoot below expectation against them (positive = lucky). Lineups rebuilt from substitutions, ${cov ? Math.round(100 * cov.share_kept) : "?"}% of game time covered.`;
+})();
+
+// ---------- news that matters ----------
+function newsCard(n) {
+  const bad = ["out", "doubtful"].includes(n.status_implied) || n.kind === "suspension", good = n.kind === "return";
+  const when = n.published ? new Date(n.published).toLocaleString("en-GB", {weekday: "short", hour: "2-digit", minute: "2-digit"}) : "";
+  return `<article class="nw" data-tonight="${n.tonight ? 1 : 0}" data-ahead="${n.ahead ? 1 : 0}">
+    <div class="top">${(n.teams || []).map(t => `<span data-open="${esc(t)}" style="cursor:pointer">${logo(t, "sm")}</span>`).join("")}
+      <b>${esc((n.players || []).join(", ") || (n.teams || []).join(", "))}</b><span class="kd ${bad ? "bad" : good ? "good" : ""}">${esc(n.kind)}${n.status_implied ? ": " + esc(n.status_implied) : ""}</span>
+      ${n.tonight ? `<span class="flag">tonight</span>` : ""}${n.ahead ? `<span class="flag">ahead of the injury report</span>` : ""}</div>
+    <div class="sum">${esc(n.summary || n.title)}</div>
+    <div class="meta">${n.impact ? `worth ${n.impact.toFixed(1)} pts of margin · ` : ""}${esc(when)} · ${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.source)}</a>` : esc(n.source)}</div></article>`;
+}
+(function newsSection() {
+  const N = D.news || [], box = $("newsList");
+  if (!N.length) { box.innerHTML = `<p class="muted">No news that changes availability in the last 48 hours. The desk checks every 30 minutes from 15:30 to 07:30 SGT.</p>`; return; }
+  box.innerHTML = N.map(newsCard).join("");
+  document.querySelectorAll("#newsSeg button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#newsSeg button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    box.querySelectorAll(".nw").forEach(c => c.hidden = b.dataset.f !== "all" && c.dataset[b.dataset.f] !== "1");
+  });
 })();
 
 // ---------- standings by conference ----------
@@ -1015,11 +1062,26 @@ async function openTeam(team, player) {
       <div><b class="num">${pct(T.playoffs)}</b><span>make playoffs</span></div>
       <div><b class="num">${se.roll10 ?? "?"}</b><span>net, last 10 games</span></div></div>
     <div class="muted" style="font-size:12px">Four factors: eFG ${pct(ff.efg, 1)} · turnovers ${pct(ff.tov, 1)} · off. rebounds ${pct(ff.orb, 1)} · FT rate ${ff.ftr ?? "?"} · 3PA share ${pct(ff.p3a)}${(se.luck_flags || []).length ? " · luck: " + esc(se.luck_flags.join(", ")) : ""}</div>
+    ${(T.news || []).length ? `<div class="dsec"><h3>News</h3><p>Last 72 hours, tagged and summarised.</p><div class="newsgrid" style="grid-template-columns:1fr">${T.news.map(newsCard).join("")}</div></div>` : ""}
     <div class="dsec"><h3>How to beat them</h3><p>Their measured weak spots (worst seven in the league, or well above normal) and the plays that attack them. Tap a play to see what it is.</p>
       ${(T.weaknesses || []).length ? `<div class="labels">${T.weaknesses.map(w => `<div class="lbl"><div class="top"><span>${esc(w.area)}</span><span class="tag">${esc(w.side)} · ${esc(w.source)}</span></div>
         <div class="ev">${esc(w.evidence)}. ${esc(w.why)}</div>${w.note ? `<div class="ev muted">${esc(w.note)}</div>` : ""}
         <div class="ev"><b>${esc(w.exploit)}</b> ${(w.plays || []).map(x => `<button class="sc rep" data-play="${esc(x)}" style="margin:2px 2px 0 0">${esc(x)}</button>`).join("")}</div></div>`).join("")}</div>`
         : `<p class="muted" style="font-size:13px">No clear weakness in the numbers yet.</p>`}</div>
+    ${(() => { const PL = T.plays; if (!PL) return "";
+      const tbl = (rows, side) => `<table><thead><tr><th>Play</th><th class="r">Used</th><th class="r">Attempts</th><th class="r">Success</th><th class="r">League</th><th class="r">Pts/shot</th><th class="r">vs league</th><th class="r">Assisted</th><th class="r">Rank${side === "defense" ? " (1 = stingiest)" : ""}</th></tr></thead><tbody>${rows.map(r =>
+        `<tr><td><button class="sc plink3" data-play="${esc(r.explain)}">${esc(r.play)}</button></td><td class="r num">${pct(r.share)}</td><td class="r num">${r.att}</td>
+         <td class="r num ${(side === "offense") === (r.success >= r.lg_success) ? "up" : "down"}">${pct(r.success, 1)}</td><td class="r num muted">${pct(r.lg_success, 1)}</td>
+         <td class="r num">${r.pps.toFixed(2)}</td><td class="r num ${(side === "offense") === (r.vs_lg >= 0) ? "up" : "down"}">${r.vs_lg > 0 ? "+" : ""}${r.vs_lg.toFixed(2)}</td>
+         <td class="r num">${r.assisted == null ? "" : pct(r.assisted)}</td><td class="r num">${r.small_sample ? "<span class='muted'>few</span>" : r.rank ? "#" + r.rank : ""}</td></tr>`).join("")}</tbody></table>`;
+      const A = PL.ato || {plays: []};
+      return `<div class="dsec"><h3>Playbook: every play they run</h3><p>How each shot was created and where it ended up, how often they go to it, and how often it goes in. Tap a play for what it is.</p>${tbl(PL.offense, "offense")}
+        <h4 style="margin:16px 0 6px;font-size:14px">After timeouts</h4>
+        <p class="muted" style="font-size:12px;margin:0 0 6px">${A.n} ATO possessions: ${pct(A.ends.score)} score, ${pct(A.ends.turnover)} turnovers, ${pct(A.ends["free throws"])} get to the line.</p>
+        <table><thead><tr><th>ATO play</th><th class="r">Used</th><th class="r">Attempts</th><th class="r">Success</th><th class="r">League (all plays)</th></tr></thead><tbody>${A.plays.map(r =>
+          `<tr><td><button class="sc plink3" data-play="${esc(r.explain)}">${esc(r.play)}</button></td><td class="r num">${pct(r.share)}</td><td class="r num">${r.att}</td><td class="r num ${r.success >= r.lg_success ? "up" : "down"}">${pct(r.success)}${r.small_sample ? " <span class='muted'>few</span>" : ""}</td><td class="r num muted">${pct(r.lg_success)}</td></tr>`).join("")}</tbody></table>
+        <h4 style="margin:16px 0 6px;font-size:14px">What opponents run against them</h4>${tbl(PL.defense, "defense")}
+        <p class="muted" style="font-size:12px">Named sets (horns, Spain pick-and-roll...) are listed in the Film room section: public data does not tag each possession with its set, so they have no success rate.</p></div>`; })()}
     ${(() => { const X = T.decides; if (!X) return "";
       const rc = X.recipe || {}, E = X.edge || {}, L = X.lineups || {}, CQ = X.clutch_quarters || {}, SQ = X.shot_quality || {};
       const sg = (v, d = 1) => v == null ? "n/a" : `<span class="${v >= 0 ? "up" : "down"}">${v > 0 ? "+" : ""}${Number(v).toFixed(d)}</span>`;

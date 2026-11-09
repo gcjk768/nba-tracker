@@ -5,6 +5,20 @@ updated: 2026-11-09
 # Changelog
 
 ## 2026-11-09
+- Top 5 plays with success % (the owner: "top 5 plays they normally run and the percentage that the play succeed"):
+  `nba/plays.py` turns every shot into a play (how it was created + where it ended: pull-up 3, drive to the rim, spot-up
+  corner 3, cut, lob, post-up, putback...) with usage, success % (makes / attempts), points per shot, league comparison,
+  assisted share and a 1-30 rank; ATO top plays and how ATO possessions end; top plays allowed on defense. Team cards
+  show the top 5, the drawer shows every play (offense, ATO, defense), `/plays` lists the top 5. Named sets keep "reported"
+  only: public data does not tag possessions with sets, so no success rate for them. News spoiler regex fixed (a heredoc
+  had turned `` into backspaces); news subject-only status flag.
+- News desk (the owner: "news that might affect the game"): `nba/news.py` + `prompts/news.md`. Sources: ESPN injury blurbs,
+  ESPN news feed (recaps skipped), CBS Sports NBA RSS, one Agent Reach web search per team ~3 h before its tip.
+  Rotowire not used (robots.txt). Claude haiku tags kind / teams / players / implied status and paraphrases (<= 25 words);
+  priced with player values; flagged "ahead of the injury report" when news says out / doubtful before the official
+  feed does. Runs with every injury check and before the digest; pushes one batched Telegram card only for tonight's
+  top-3 players or contenders (first run seeds silently). Dashboard "News that matters" (All / Tonight / Ahead filters),
+  team drawer news, digest block. News never moves the model.
 - "What decides games" (the owner picked all ten ideas): `nba/insights.py` (exact win-recipe split of every margin into
   shooting / turnovers / offensive rebounds / free throws; shot quality = expected pts per shot from type + zone vs
   actual, offense and defense luck; rest and travel per game from the schedule and arena coordinates; clutch; quarter

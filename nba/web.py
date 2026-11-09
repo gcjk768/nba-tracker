@@ -110,6 +110,7 @@ def data(ctx) -> dict:
         "title": {"dates": dates, "teams": {t: [round(series[t].get(d, 0), 4) for d in dates] for t in ever_top},
                   "market": {t: round(v, 4) for t, v in mkt.items()}, "latest": latest},
         "tonight_ctx": {g["game_id"]: game_context(ctx, g) for g in jobs.slate_view(ctx, today)},
+        "news": _news(c),
         "rankings": rankings, "status": status[:40],
         "styles": styles,
         "playbooks": playbooks(ctx, styles),
@@ -166,6 +167,29 @@ def weaknesses_all(ctx) -> dict:
     return _CACHE[k]
 
 
+def plays_all(ctx) -> dict:
+    """Per team: offense plays, plays allowed, ATO plays, with success % and league ranks. Cached."""
+    from . import ato, plays
+    k = ("plays", _key(ctx.conn))
+    if k in _CACHE:
+        return _CACHE[k]
+    S = schemes.shots(ctx.conn, ctx.s.espn_season)
+    lg = plays.league(S)
+    rk = plays.ranks(S, lg)
+    poss = ato.possessions(ctx.conn, ctx.s.espn_season)
+    out = {"_league": {p: {"success": round(v["success"], 3), "pps": round(v["pps"], 3)} for p, v in lg.items()}}
+    for t in espn.TEAM_IDS:
+        off = plays.team_plays(S, t, lg, "offense")
+        de = plays.team_plays(S, t, lg, "defense")
+        for r in off:
+            r["rank"] = rk["offense"].get(r["play"], {}).get(t)
+        for r in de:
+            r["rank"] = rk["defense"].get(r["play"], {}).get(t)
+        out[t] = {"offense": off, "defense": de, "ato": plays.ato_plays(poss, t, lg)}
+    _CACHE[k] = out
+    return out
+
+
 def playbooks(ctx, styles: list[dict]) -> list[dict]:
     """One card per team: what they run most on offense, after timeouts, on defense, and named sets reported."""
     from . import social_intel
@@ -196,6 +220,8 @@ def playbooks(ctx, styles: list[dict]) -> list[dict]:
                         "top_blocker": P[t]["top_blocker"]["name"] if P[t]["top_blocker"]["per_game"] >= 1.0 else None},
             "named": pb["counts"], "named_n": len(pb["recent"]),
             "beat": weaknesses_all(ctx).get(t, [])[:3],
+            "top_plays": plays_all(ctx)[t]["offense"][:5], "top_allowed": plays_all(ctx)[t]["defense"][:3],
+            "ato_plays": plays_all(ctx)[t]["ato"],
         })
     return out
 
@@ -308,7 +334,9 @@ def team_data(ctx, team: str) -> dict | None:
             "film": _film(c, team, prof.get("labels", [])),
             "ato": ato_profiles(ctx).get(team), "ato_league": ato_profiles(ctx).get("_league"),
             "weaknesses": weaknesses_all(ctx).get(team, []),
+            "news": _news(c, team),
             "decides": _team_decides(ctx, team),
+            "plays": plays_all(ctx)[team], "plays_league": plays_all(ctx)["_league"],
             "recent": recent, "upcoming": upcoming, "kinds": list(schemes.KINDS), "zones": list(schemes.ZONES)}
 
 
@@ -335,6 +363,15 @@ def _film(c, team, inferred):
         r["agrees_with"] = agree.get(r["label"]) if any(l["label"] == agree.get(r["label"]) for l in inferred) else None
         r["contradicts"] = next((x["inferred"] for x in clash if x["url"] == r["url"] and x["label"] == r["label"]), None)
     return pb
+
+
+def _news(c, team=None):
+    from . import news
+    try:
+        return news.recent(c, hours=72 if team else 48, team=team, limit=12 if team else 30)
+    except Exception as e:
+        log.warning("news read failed: %s", e)
+        return []
 
 
 def _recipe_line(c, g):

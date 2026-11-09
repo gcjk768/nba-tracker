@@ -268,6 +268,18 @@ def cmd_plays(ctx, args):
         ls = [l for l in p["labels"] if l["side"] == side]
         lines.append(f"{emoji} <b>{side.title()}</b>")
         lines += [f"   {tp.e(l['label'])} <i>(inferred, {round(100 * l['confidence'])}%)</i>" for l in ls] or ["   <i>balanced, nothing stands out</i>"]
+    try:
+        from . import web
+        PL = web.plays_all(ctx)[t]
+        lines += ["", "📋 <b>Top 5 plays</b> (used · success · league)"] + [
+            f"   {tp.e(r['play'])}: {100 * r['share']:.0f}% · {100 * r['success']:.0f}% in · {100 * r['lg_success']:.0f}%"
+            + (" <i>(few)</i>" if r["small_sample"] else f" · #{r['rank']}" if r.get("rank") else "") for r in PL["offense"][:5]]
+        A = PL["ato"]
+        if A["plays"]:
+            lines.append(f"⏱ <b>ATO</b>: {100 * A['ends']['score']:.0f}% score · top: " + ", ".join(
+                f"{tp.e(r['play'])} {100 * r['success']:.0f}%" for r in A["plays"][:3]))
+    except Exception:
+        pass
     lines += ["", "📊 Shot diet: " + ", ".join(f"{tp.e(k)} {100 * v:.0f}% ({100 * lo.get('kind:' + k, 0):.0f})" for k, v in top),
               f"   assisted makes {100 * o['assisted']:.0f}% · transition {100 * o['transition']:.0f}% · {o['pps']:.2f} pts/shot",
               f"🛡 Opponents: rim {100 * d['rim_rate']:.0f}% · 3PA {100 * d['three_rate']:.0f}% · {d['pps']:.2f} pts/shot",

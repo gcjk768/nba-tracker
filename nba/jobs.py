@@ -382,6 +382,10 @@ def _daily(ctx, key):
         except Exception as e:
             log.warning("injury snapshot in daily failed: %s", e)
         bump_state(ctx)
+        try:
+            news_check(ctx)
+        except Exception as e:
+            log.warning("news desk in daily failed: %s", e)
         step_done(ctx, "daily", key, "collected")
         if res.pending:
             db.meta_set(conn, "pending_dates", json.dumps(sorted({last_night})))
@@ -549,11 +553,22 @@ def build_digest(ctx, today, games, briefs, aar, tune_rep, st, sim, prev_sim, ve
               ("status", tp.status_block(status) if status else ""),
               ("movers", tp.movers_block(movers, sp) if movers else ""),
               ("title", tp.title_block(race, sp)), ("verdict", tp.verdict_block(vlines, sp)),
+              ("news", _news_digest(ctx)),
               ("tonight", tp.tonight_block(tonight) if tonight else ""), ("keys", _keys(ctx, tonight)), ("record", tp.record_block(sc_all)),
               ("link", f"📊 <a href=\"{tp.e(ctx.s.dashboard_url)}\">Dashboard</a>  ·  🗂 <code>{tp.e(ctx.vault.obsidian_url(daily_rel))}</code>")]
     if warnings:
         blocks.insert(0, ("warn", "\n".join(f"{tp.SECTION_TITLES['warn']} <i>{tp.e(w)}</i>" for w in warnings[:3])))
     return tp.fit(blocks, tp.title("digest", "NBA DAILY", f"{_nice(today)} · {len(games)} games"))
+
+
+def _news_digest(ctx):
+    try:
+        from . import news
+        items = [n for n in news.recent(ctx.conn, hours=24, limit=20) if n["kind"] != "other"][:6]
+        return tp.news_block(items) if items else ""
+    except Exception as e:
+        log.warning("news digest failed: %s", e)
+        return ""
 
 
 def _keys(ctx, tonight):
@@ -733,8 +748,13 @@ def injury_check(ctx, key=None):
 
 def _injury_check(ctx, key):
     conn = ctx.conn
-    rows = espn.parse_injuries(ctx.client.injuries())
+    inj_json = ctx.client.injuries()
+    rows = espn.parse_injuries(inj_json)
     changes = inj_mod.snapshot(conn, rows)
+    try:
+        news_check(ctx, inj_json)
+    except Exception as e:
+        log.warning("news desk failed: %s", e)
     today = ctx.now_sgt().date().isoformat()
     for c in changes:
         ctx.vault.append(f"Injuries/{today[:7]}.md", f"- {c['ts'][:16]}Z **{c['name']}** ({c['team']}) {c['old']} → {c['new']}"
@@ -787,6 +807,48 @@ def _injury_check(ctx, key):
     inj_mod.mark(conn, [c["id"] for c in pending if c["id"] not in sent_ids], 1)
     ctx.vault.activity("🩹", "injury check", f"{len(pending)} change(s), {len(alerts)} alert(s)")
     return {"changes": len(pending), "alerts": len(alerts)}
+
+
+def news_check(ctx, inj_json=None):
+    """Collect + tag new items; push the ones that hit tonight's key players or contenders (one batched message)."""
+    from . import news, social_intel
+    today = ctx.now_sgt().date().isoformat()
+    slate = [dict(g) for g in ctx.conn.execute("select * from games where date=? and status='scheduled'", (today,))]
+    now = ctx.now_sgt().astimezone(UTC)
+    teams_tonight = sorted({t for g in slate for t in (g["home"], g["away"])})
+    soon = sorted({t for g in slate for t in (g["home"], g["away"])
+                   if timedelta(0) < P._parse_ts(g["tip_utc"]) - now <= timedelta(hours=3)})
+    st = state(ctx, today)
+    live = isinstance(ctx.client, espn.Client)          # tests use a fake client: no outside news fetches
+    kept = news.collect(ctx.conn, ctx.s.model_ask, inj_json, reach=social_intel.Reach() if (soon and live) else None,
+                        http=None if live else news.NoNet(),
+                        teams_tonight=soon if soon else teams_tonight, today=today, values=st["values"], injuries=st["injuries"],
+                        runner=ctx.runner)
+    if not kept:
+        return 0
+    # mark tonight for all of tonight's teams (pre-tip search only used the ones close to tip)
+    with db.LOCK:
+        for n in kept:
+            if set(n["teams"]) & set(teams_tonight):
+                ctx.conn.execute("update news_items set tonight=1 where key=?", (n["key"],))
+    sims = latest_sim(ctx)
+    contenders = set(sorted(sims, key=lambda t: -sims[t]["title"])[:8]) if sims else set()
+    top = {}
+    for pid, v in st["values"].items():
+        top.setdefault(v["team"], []).append((v["value"], v["name"].lower()))
+    top_players = {t: {n for _, n in sorted(xs, reverse=True)[:3]} for t, xs in top.items()}
+    push = news.to_push(ctx.conn, contenders, top_players)
+    if push and db.meta_get(ctx.conn, "news_seeded") != "1":       # first run: everything is already-known news, seed silently
+        news.mark_pushed(ctx.conn, [n["id"] for n in push])
+        db.meta_set(ctx.conn, "news_seeded", "1")
+        push = []
+    db.meta_set(ctx.conn, "news_seeded", "1")
+    if push:
+        ctx.tg.send(tp.news_block(push[:6], "NEWS", "affects tonight"))
+        news.mark_pushed(ctx.conn, [n["id"] for n in push])
+        ctx.vault.activity("📰", "news alert sent", ", ".join(sorted({p for n in push for p in n["players"]}))[:120])
+    ctx.vault.activity("📰", "news desk", f"{len(kept)} new item(s) kept")
+    return len(kept)
 
 
 def _alert_html(alerts):
