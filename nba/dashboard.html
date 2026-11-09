@@ -750,6 +750,18 @@ async function openTeam(team, player) {
     ${(T.vs_styles || []).length ? `<div class="dsec"><h3>Record against styles</h3><p>Results against opponents grouped by the opponent's inferred style. Small samples early in the season.</p>
       <table><thead><tr><th>Opponent style</th><th class="r">Games</th><th class="r">Record</th><th class="r">Avg margin</th></tr></thead><tbody>${T.vs_styles.map(v =>
         `<tr><td>${esc(v.style)}</td><td class="r num">${v.games}</td><td class="r num">${esc(v.record)}</td><td class="r num ${v.avg_margin >= 0 ? "up" : "down"}">${v.avg_margin > 0 ? "+" : ""}${v.avg_margin}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    <div class="dsec"><h3>Film room</h3><p>Named sets and coverages reported in YouTube breakdowns and postgame press conferences (last 3 days of games, checked nightly). Tagged reported, with the source.</p>
+      ${(() => { const F = T.film || {counts: {}, recent: []};
+        if (!F.recent.length) return `<p class="muted" style="font-size:13px">Nothing reported for this team yet.</p>`;
+        const counts = Object.entries(F.counts).map(([k, v]) => `<div style="margin:4px 0"><b style="font-size:13px">${esc(k)}s</b> ${Object.entries(v).map(([l, n]) => `<span class="pill" style="color:var(--accent);margin:0 4px 4px 0;display:inline-block">${esc(l)} ×${n}</span>`).join("")}</div>`).join("");
+        const rows = F.recent.map(r => `<div class="lbl" style="margin-top:8px"><div class="top"><span>${esc(r.label)} <span class="muted" style="font-weight:400">${esc(r.kind)}</span></span>
+          <span class="tag">reported · ${esc(r.date.slice(5))}</span></div>
+          <div class="ev">${esc(r.summary)}${r.who ? " (" + esc(r.who) + ")" : ""}</div>
+          ${r.agrees_with ? `<div class="ev up">Agrees with the inferred read: ${esc(r.agrees_with)}</div>` : ""}
+          ${r.contradicts ? `<div class="ev down">Contradicts the inferred read: ${esc(r.contradicts)}. Both shown, neither picked.</div>` : ""}
+          <div class="ev"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a> · ${esc(r.channel)}</div></div>`).join("");
+        return counts + rows; })()}
+    </div>
     <div class="dsec"><h3>Roster and status</h3><p>Tap a player for his line, shot diet and last five games.</p>${roster}</div>
     <div class="dsec"><h3>Recent and next games</h3><p class="${D.spoiler ? "res-hide" : ""}" id="dRecent">${recent || "None yet."}</p>
       ${D.spoiler && recent ? `<button onclick="$('dRecent').classList.remove('res-hide');this.remove()">Show results</button>` : ""}

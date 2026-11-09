@@ -16,6 +16,11 @@ USER app
 RUN curl -fsSL https://claude.ai/install.sh | bash -s stable
 ENV PATH=/home/app/.local/bin:$PATH
 RUN claude --version
+# Agent Reach for the film room (YouTube, read-only). From the GitHub release, never PyPI (different project there).
+# Pinned to v1.6.1; bump deliberately.
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+ && ~/.local/bin/uv tool install https://github.com/Panniantong/Agent-Reach/releases/download/v1.6.1/agent-reach.zip \
+ && agent-reach version
 # code last: a code-only change rebuilds in seconds instead of reinstalling the Claude CLI
 COPY --chown=app nba ./nba
 COPY --chown=app tests ./tests

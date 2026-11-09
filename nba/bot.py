@@ -268,7 +268,21 @@ def cmd_plays(ctx, args):
 
 
 def cmd_film(ctx, args):
-    return tp.title("film", "Film room") + "\n\n<i>Phase 3: reported sets and coverages from breakdown videos.</i>"
+    t = espn.team_code(" ".join(args))
+    if not t:
+        return "Usage: <code>/film BOS</code>"
+    from . import social_intel
+    pb = social_intel.playbook(ctx.conn, t)
+    lines = [tp.title("film", f"{t} film room", "reported in breakdowns and pressers"), ""]
+    if not pb["recent"]:
+        return "\n".join(lines + ["<i>Nothing reported yet. The film room runs nightly at 21:00 SGT on the last 3 days of games.</i>"])
+    for kind, counts in pb["counts"].items():
+        lines.append(f"<b>{tp.e(kind.title())}s</b>: " + ", ".join(f"{tp.e(k)} ×{n}" for k, n in list(counts.items())[:6]))
+    lines.append("")
+    for r in pb["recent"][:5]:
+        lines.append(f"🎬 {tp.e(r['date'][5:])} <b>{tp.e(r['label'])}</b> · {tp.e(r['summary'])}")
+        lines.append(f"   <a href=\"{tp.e(r['url'])}\">{tp.e(r['channel'] or 'video')}</a>")
+    return "\n".join(lines)
 
 
 def cmd_help(ctx, args):

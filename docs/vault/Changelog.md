@@ -5,6 +5,14 @@ updated: 2026-11-09
 # Changelog
 
 ## 2026-11-09
+- Phase 3 film room (the owner: "use YouTube and Agent Reach for sets like horns"): `nba/social_intel.py` wraps Agent Reach
+  (YouTube search / read / subtitle, v1.6.1 from the GitHub release in the image). Nightly 21:00 SGT over the last
+  3 days of games: postgame pressers + breakdown channels, upload date must be game day to +3, subtitles go to
+  `claude-haiku-5-5` with `prompts/film.md` (named sets / actions / coverages only, JSON). Stored: label, <= 2-sentence
+  paraphrase, link; never transcripts. Budget 12 searches / 12 reads / 8 subtitles, spaced; the first RATE_LIMITED /
+  PLATFORM_BLOCKED / NEED_LOGIN stops the pass (YouTube returned 429 after 8 quick calls in testing). Reported labels
+  are compared with inferred ones (agree / contradict shown, never silently merged); Telegram follow-up only on a
+  contradiction. Team drawer "Film room" + season playbook counts; `/film BOS`.
 - Dashboard redesign (design-taste + dataviz skills): broadcast-style dark-first page, Geist font self-hosted
   (`nba/static/`, OFL), team logos and colours from ESPN cached in `data/` (`/logo/<TEAM>.png`), hero favourite +
   team-colour bar-chart race, matchup cards, spoiler-safe last night, tiered standings, model strip.

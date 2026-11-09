@@ -176,7 +176,20 @@ def team_data(ctx, team: str) -> dict | None:
             "pace_pct": prof.get("pace_pct"), "forced_tov_pct": prof.get("forced_tov_pct"), "top_blocker": prof.get("top_blocker"),
             "roster": players.roster(c, season, team, injuries, values),
             "vs_styles": schemes.record_vs_styles(c, season, team, prof_all),
+            "film": _film(c, team, prof.get("labels", [])),
             "recent": recent, "upcoming": upcoming, "kinds": list(schemes.KINDS), "zones": list(schemes.ZONES)}
+
+
+def _film(c, team, inferred):
+    from . import social_intel
+    pb = social_intel.playbook(c, team)
+    clash = social_intel.contradictions([dict(r) for r in pb["recent"]], {team: inferred})
+    agree = {"drop": "Concedes the mid-range (drop-style)", "blitz": "Turnover-forcing (aggressive, traps or blitzes likely)",
+             "zone": "Packs the paint"}
+    for r in pb["recent"]:
+        r["agrees_with"] = agree.get(r["label"]) if any(l["label"] == agree.get(r["label"]) for l in inferred) else None
+        r["contradicts"] = next((x["inferred"] for x in clash if x["url"] == r["url"] and x["label"] == r["label"]), None)
+    return pb
 
 
 def render(payload: dict) -> str:

@@ -889,3 +889,40 @@ def season_wrap(ctx):
     ctx.tg.send("\n".join(lines))
     db.meta_set(ctx.conn, "season_over", "1")
     ctx.vault.activity("🏁", "season over", f"champion {champ}")
+
+# ---------- film room (21:00 SGT) ----------
+
+def film(ctx, key=None):
+    key = key or ctx.now_sgt().date().isoformat()
+    return guarded(ctx, "film", key, _film)
+
+
+def _film(ctx, key):
+    from . import schemes, social_intel
+    res = social_intel.run(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach"),
+                           claude_runner=ctx.runner)
+    added = res["added"]
+    by_game = {}
+    for it in added:
+        by_game.setdefault(it["game_id"], []).append(it)
+    for gid, items in by_game.items():
+        g = ctx.conn.execute("select date, home, away from games where game_id=?", (gid,)).fetchone()
+        rel = ob.game_rel(g["date"], g["away"], g["home"])
+        for it in items:
+            ctx.vault.append(rel, f"- **{it['team']}** {it['kind']}: **{it['label']}** (reported) · {it['summary']} · [{it['title']}]({it['url']})",
+                             header="## Film Room")
+    labels = {}
+    if added:
+        rows = agg.team_season(ctx.conn, ctx.s.espn_season, {})
+        labels = {t: v["labels"] for t, v in schemes.team_profiles(ctx.conn, ctx.s.espn_season, rows).items() if not t.startswith("_")}
+    clash = social_intel.contradictions(added, labels)
+    if clash:
+        lines = [tp.title("film", "FILM ROOM", "reported vs inferred"), ""]
+        for c in clash[:6]:
+            lines.append(f"🎬 <b>{tp.e(c['team'])}</b> played <b>{tp.e(c['label'])}</b> <i>(reported)</i>, "
+                         f"but the play-by-play read was <i>{tp.e(c['inferred'])}</i>")
+            lines.append(f"   {tp.e(c['summary'])} · <a href=\"{tp.e(c['url'])}\">video</a>")
+        ctx.tg.send("\n".join(lines))
+    ctx.vault.activity("🎬", "film room", f"{res['games']} games, {len(added)} labels"
+                       + (f", {len(clash)} contradictions" if clash else "") + (f", stopped: {res['stop']}" if res["stop"] else ""))
+    return {"games": res["games"], "labels": len(added), "contradictions": len(clash), "stop": res["stop"], "used": res["used"]}
