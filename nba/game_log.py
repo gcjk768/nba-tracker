@@ -5,12 +5,33 @@ leans reuse schemes.infer, with this game's numbers ranked against every team-ga
 means this opponent's rim share was in the league's bottom quarter of team-games. Named sets and coverages per game
 come only from breakdowns tied to that game (film_items.game_id), never guessed.
 """
+import json
 from bisect import bisect_left
 from collections import Counter, defaultdict
 
-from . import playbook_kb as kb, plays, schemes
+from . import db, insights as ins, playbook_kb as kb, plays, schemes
 
-FOCUS = ("LAL", "SA", "PHI", "OKC")      # the owner 2026-11-10: Lakers, Spurs, 76ers, Thunder
+FOCUS = ("LAL", "SA", "PHI", "OKC")      # the owner 2026-11-10: Lakers, Spurs, 76ers, Thunder (always tracked)
+MAX_TEAMS = 10   # ~10 teams play ~5 games a night: the most the nightly write-up search (5 games) keeps up with
+
+
+def tracked(conn) -> list[str]:
+    """Tracked teams: the pinned four, then top teams added one at a time by grow()."""
+    return json.loads(db.meta_get(conn, "game_log_teams") or "null") or list(FOCUS)
+
+
+def grow(conn) -> str | None:
+    """Add the best team (healthy net rating) not tracked yet. Called only when the write-up backlog is clear,
+    so teams arrive slowly and the search never falls behind. Returns the team added, if any."""
+    cur = tracked(conn)
+    d = conn.execute("select max(date) from ratings").fetchone()[0]
+    if len(cur) >= MAX_TEAMS or not d:
+        return None
+    for (t,) in conn.execute("select team from ratings where date=? order by healthy_net desc", (d,)):
+        if t not in cur:
+            db.meta_set(conn, "game_log_teams", json.dumps(cur + [t]))
+            return t
+    return None
 
 
 def _pcts(rows: dict) -> tuple[dict, dict]:
@@ -37,14 +58,18 @@ def _scheme(label, source, def_rows, **kw):
             "counters": ctrs[:3], "why": why, "estimate": _est(def_rows, kb.COVERAGE_GIVES.get(label, [])), **kw}
 
 
-def _named_sets(reported, season, off_rows, top=8):
+def _named_sets(reported, season, off_rows, top=14):
     """Named offensive sets: reported for this game first, then the team's season playbook (reported in season
     breakdowns), each with this game's estimated success from the plays the set usually ends in."""
-    rows = {x["label"]: {"label": x["label"], "source": "this game", "summary": x["summary"], "url": x["url"], "ato": bool(x.get("ato"))}
-            for x in reported if x["kind"] != "coverage"}
+    rows = {}
+    for x in reported:            # several write-ups can name the same set: keep the one that says what it did
+        if x["kind"] != "coverage" and (x["label"] not in rows or (x.get("impact") and not rows[x["label"]]["impact"])):
+            rows[x["label"]] = {"label": x["label"], "kind": x["kind"], "source": "this game", "summary": x["summary"], "url": x["url"],
+                                "ato": bool(x.get("ato")), "impact": x.get("impact") or "", "effect": x.get("effect") or ""}
     for k, x in season.items():
         if x["kind"] != "coverage" and k not in rows:
-            rows[k] = {"label": k, "source": "season", "summary": x["summary"], "url": x["url"], "ato": False, "mentions": x["n"]}
+            rows[k] = {"label": k, "kind": x["kind"], "source": "season", "summary": x["summary"], "url": x["url"], "ato": False, "mentions": x["n"],
+                       "impact": "", "effect": ""}
     for r in rows.values():
         r["estimate"] = _est(off_rows, kb.SET_TO_PLAYS.get(r["label"], []))
     return list(rows.values())[:top]
@@ -60,7 +85,8 @@ def _named_defense(reported, season, labels, def_rows):
     rows = {"man-to-man": _scheme("man-to-man", "base", def_rows)}
     for x in reported:
         if x["kind"] == "coverage":
-            rows[x["label"]] = _scheme(x["label"], "this game", def_rows, summary=x["summary"], url=x["url"])
+            rows[x["label"]] = _scheme(x["label"], "this game", def_rows, summary=x["summary"], url=x["url"],
+                                       impact=x.get("impact") or "", effect=x.get("effect") or "")
     for k, x in season.items():
         if x["kind"] == "coverage" and k not in rows:
             rows[k] = _scheme(k, "season", def_rows, summary=x["summary"], url=x["url"], mentions=x["n"])
@@ -116,9 +142,12 @@ def build(conn, season, teams=FOCUS) -> dict:
             defense, tendencies = _named_defense(reported, season_named[t], labels, def_rows)
             mo, md = mix[(gid, t)], mix[(gid, o)]
             pts, opts = (g["home_pts"], g["away_pts"]) if home else (g["away_pts"], g["home_pts"])
+            parts, won = ins.game_recipe(conn, gid).get(t) or {}, pts > opts
+            why = sorted(((k, v) for k, v in parts.items() if k != "other" and v and (v > 0) == won), key=lambda x: -abs(x[1]))[:2]
             games.append({
                 "game_id": gid, "date": g["date"], "opp": o, "home": home, "pts": pts, "opp_pts": opts, "ot": g["ot"],
                 "result": "W" if pts > opts else "L", "cup": "Cup" in (g["note"] or ""),
+                "why": [{"factor": k, "pts": v} for k, v in why],
                 "offense": {"plays": off_rows[:4], "styles": [l for l in labels if l["side"] == "offense"], "sets": sets,
                             "pps": round(mo["pps"], 3), "three_rate": round(mo["three_rate"], 3), "rim_rate": round(mo["rim_rate"], 3),
                             "assisted": round(mo["assisted"], 3), "transition": round(mo["transition"], 3)},
@@ -130,6 +159,9 @@ def build(conn, season, teams=FOCUS) -> dict:
         out[t] = {"games": games, "record": f"{sum(x['result'] == 'W' for x in games)}-{sum(x['result'] == 'L' for x in games)}",
                   "def_counts": Counter(s["label"] for x in games for s in x["defense"]["schemes"] if s["source"] != "season").most_common(),
                   "set_counts": Counter(s["label"] for x in games for s in x["offense"]["sets"] if s["source"] == "this game").most_common(),
+                  "call_counts": Counter(s["label"] for x in games for s in x["offense"]["sets"]
+                                         if s["source"] == "this game" and s["kind"] == "set").most_common(),
+                  "system_counts": Counter(s["label"] for x in games for s in x["offense"]["sets"] if s["kind"] == "system").most_common(),
                   "tendency_counts": Counter(s["label"] for x in games for s in x["defense"]["tendencies"]).most_common(),
                   "off_counts": Counter(s["label"].split(" (")[0] for x in games for s in x["offense"]["styles"]).most_common(),
                   "play_counts": Counter(x["offense"]["plays"][0]["play"] for x in games if x["offense"]["plays"]).most_common(3)}

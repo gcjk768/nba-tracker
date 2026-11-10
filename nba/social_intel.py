@@ -36,6 +36,9 @@ SETS = {   # normalised label -> kind; anything else Claude returns is kept as "
     "matchup zone": "coverage", "man-to-man": "coverage", "half-court trap": "coverage",
     "scramble": "coverage", "veer switch": "coverage", "backdoor cuts": "action", "lob": "action", "alley-oop": "action",
 }
+from .playbook_kb import PLAYS as _KB      # noqa: E402  every play-call and system the knowledge base names
+SETS.update({k: v[0] for k, v in _KB.items() if v[0] in ("set", "system") and k not in SETS})
+SETS.update({"5-out": "system", "motion offense": "system"})
 # what writers call the same thing -> one name (2026-11-10: "horn", "back door", "ball screen" showed up as separate plays)
 ALIASES = {"horn": "horns", "horns set": "horns", "back door": "backdoor cuts", "backdoor": "backdoor cuts", "backdoor cut": "backdoor cuts",
            "ball screen": "pick-and-roll", "screen-and-roll": "pick-and-roll", "pick and roll": "pick-and-roll", "pnr": "pick-and-roll",
@@ -44,10 +47,17 @@ ALIASES = {"horn": "horns", "horns set": "horns", "back door": "backdoor cuts", 
            "post up": "post-up", "switching": "switch", "switch everything": "switch", "drop coverage": "drop", "zone defense": "zone",
            "2-3": "2-3 zone", "3-2": "3-2 zone", "1-3-1": "1-3-1 zone", "scrambles": "scramble", "veer switches": "veer switch",
            "peel switches": "peel switch", "full court press": "full-court press", "press": "full-court press", "trap": "blitz",
-           "man to man": "man-to-man", "lobs": "lob", "alley oop": "alley-oop"}
+           "man to man": "man-to-man", "lobs": "lob", "alley oop": "alley-oop",
+           "triangle offense": "triangle", "princeton offense": "princeton", "flex offense": "flex", "dribble-drive": "dribble drive",
+           "dribble drive motion": "dribble drive", "dribble-drive motion": "dribble drive", "4-out": "4-out 1-in", "four-out": "4-out 1-in",
+           "five-out": "5-out", "5 out": "5-out", "5-out offense": "5-out", "5-out motion offense": "5-out motion", "motion": "motion offense",
+           "horns-flare": "horns flare", "horn flare": "horns flare", "horns-twist": "horns twist", "horn twist": "horns twist",
+           "horns-rip": "horns rip", "horns-down": "horns down", "horns spain pick-and-roll": "horns spain", "horns-spain": "horns spain",
+           "horns-77": "horns 77", "horns double": "horns 77", "horns handoff": "horns dho", "horns-dho": "horns dho", "horns hi-lo": "horns high-low",
+           "horns high low": "horns high-low", "spain": "spain pick-and-roll", "spain action": "spain pick-and-roll"}
 
 
-NOT_A_PLAY = {"two-man game", "two man game", "ball movement", "motion", "effort", "transition"}   # too vague to name a set
+NOT_A_PLAY = {"two-man game", "two man game", "ball movement", "effort", "transition"}   # too vague to name a set
 
 
 def normalise(label: str, kind: str | None) -> tuple[str, str | None]:
@@ -56,7 +66,7 @@ def normalise(label: str, kind: str | None) -> tuple[str, str | None]:
     label = ALIASES.get(label.strip().lower(), label.strip().lower())
     if label in NOT_A_PLAY:
         return label, None
-    return label, SETS.get(label) or (kind if kind in ("set", "action", "coverage") else None)
+    return label, SETS.get(label) or (kind if kind in ("set", "action", "coverage", "system") else None)
 CONTRADICTS = {   # reported coverage vs our inferred defense label that it argues against
     "switch": ("Concedes the mid-range (drop-style)",),
     "blitz": ("Concedes the mid-range (drop-style)",),
@@ -70,14 +80,15 @@ class Stop(Exception):
 
 class Reach:
     """Budgeted, spaced Agent Reach CLI wrapper. runner(cmd) -> (returncode, stdout) for tests."""
-    def __init__(self, runner=None, sleep=time.sleep):
+    def __init__(self, runner=None, sleep=time.sleep, budget=None):
         self.runner = runner or _run
         self.sleep = sleep
+        self.budget = {**BUDGET, **(budget or {})}
         self.used = {k: 0 for k in BUDGET}
         self.last = {k: 0.0 for k in BUDGET}
 
     def __call__(self, action, *args):
-        if self.used[action] >= BUDGET[action]:
+        if self.used[action] >= self.budget[action]:
             raise Stop(f"{action} budget used")
         wait = self.last[action] + SPACING[action] - time.monotonic()
         if wait > 0:
@@ -162,6 +173,8 @@ def extract(text, game, url, title, model, runner=None, prompt="film.md") -> lis
             if not kind:
                 continue
             found.append({"team": team, "label": label, "kind": kind, "who": str(x.get("who", ""))[:80], "ato": int(bool(x.get("ato"))),
+                          "impact": x.get("impact") if x.get("impact") in ("worked", "failed") else "",
+                          "effect": " ".join(str(x.get("effect", "")).split())[:120],
                           "summary": " ".join(str(x.get("summary", "")).split())[:300], "url": url, "title": title[:150]})
     seen, out = set(), []
     for f in found:
@@ -172,8 +185,9 @@ def extract(text, game, url, title, model, runner=None, prompt="film.md") -> lis
     return out
 
 
-def run(conn, today: str, model: str, reach=None, claude_runner=None, days=3) -> dict:
-    """One film-room pass over games from the last `days` US dates. Returns counts and the stop reason, if any."""
+def run(conn, today: str, model: str, reach=None, claude_runner=None, days=3, first=()) -> dict:
+    """One film-room pass over games from the last `days` US dates, games of the `first` teams before the rest
+    (subtitles are scarce: YouTube rate-limits the home IP). Returns counts and the stop reason, if any."""
     reach = reach or Reach()
     since = (date.fromisoformat(today) - timedelta(days=days)).isoformat()
     games = [dict(g) for g in conn.execute("""
@@ -181,6 +195,7 @@ def run(conn, today: str, model: str, reach=None, claude_runner=None, days=3) ->
         where g.status='final' and g.source is not null and g.date >= ? and g.date < ?
           and g.game_id not in (select game_id from film_games where status='done')
         order by ex desc""", (since, today))]
+    games.sort(key=lambda g: g["home"] not in first and g["away"] not in first)      # stable: excitement order kept within each group
     added, stop = [], None
     try:
         for g in games:
@@ -250,10 +265,13 @@ def contradictions(items: list[dict], labels_by_team: dict) -> list[dict]:
     return out
 
 def _store(conn, game_id, d, it, url, channel):
-    conn.execute("""insert or ignore into film_items(game_id, date, team, kind, label, who, summary, url, title, channel, created, ato)
-                    values (?,?,?,?,?,?,?,?,?,?,?,?)""",
+    """Insert, or refresh what a re-read of the same source says (impact, effect, summary)."""
+    conn.execute("""insert into film_items(game_id, date, team, kind, label, who, summary, url, title, channel, created, ato, impact, effect)
+                    values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    on conflict(game_id, team, label, url) do update set kind=excluded.kind, summary=excluded.summary,
+                      impact=excluded.impact, effect=excluded.effect, ato=excluded.ato""",
                  (game_id, d, it["team"], it["kind"], it["label"], it["who"], it["summary"], url, it["title"], channel,
-                  datetime.now(timezone.utc).isoformat(timespec="seconds"), it.get("ato", 0)))
+                  datetime.now(timezone.utc).isoformat(timespec="seconds"), it.get("ato", 0), it.get("impact", ""), it.get("effect", "")))
 
 
 def season_articles(conn, today: str, model: str, reach=None, claude_runner=None, per_night=6, teams=None) -> dict:
@@ -301,11 +319,19 @@ def season_articles(conn, today: str, model: str, reach=None, claude_runner=None
 NOT_ARTICLE = ("youtube.com", "youtu.be", "reddit.com", "x.com", "twitter.com", "basketball-reference.com", "48index.com")
 
 
-def game_articles(conn, today: str, model: str, teams, season: int, reach=None, claude_runner=None, per_night=5) -> dict:
-    """Write-ups of each finished game of the focus teams (Exa search + Jina read via Agent Reach): named sets and
-    coverages tied to that game. Newest games first, `per_night` a night (<= 2 reads each, inside the read budget);
-    each (game, team) is searched once, marked `art:<game_id>:<team>` in film_games."""
-    reach = reach or Reach()
+GAME_BUDGET = {"web_search": 12, "web_read": 18}     # 6 games a night: 2 searches + up to 3 reads each
+
+
+def _won(g, t):
+    return (g["home_pts"] > g["away_pts"]) == (g["home"] == t)
+
+
+def game_articles(conn, today: str, model: str, teams, season: int, reach=None, claude_runner=None, per_night=6) -> dict:
+    """Write-ups of each finished game of the tracked teams (Exa search + Jina read via Agent Reach): the sets and
+    coverages each side ran in that game and whether they worked. Two searches per game (this team's angle, the
+    opponent's angle), up to 3 reads. Newest games first; each (game, team) is searched once, marked
+    `art:<game_id>:<team>` in film_games."""
+    reach = reach or Reach(budget=GAME_BUDGET)
     done = {r[0] for r in conn.execute("select game_id from film_games where game_id like 'art:%'")}
     todo = sorted(((dict(g), t) for t in teams for g in conn.execute(
         "select * from games where season=? and status='final' and source is not null and date < ? and ? in (home, away)",
@@ -314,13 +340,14 @@ def game_articles(conn, today: str, model: str, teams, season: int, reach=None, 
     try:
         for g, t in todo[:per_night]:
             opp, gd = g["away"] if t == g["home"] else g["home"], date.fromisoformat(g["date"])
-            items = reach("web_search", f"{espn.NAMES[t]} vs {espn.NAMES[opp]} {gd:%B} {gd.day}, {gd.year} film breakdown sets defense",
-                          "--limit", "6") or []
+            when, verb = f"{gd:%B} {gd.day}, {gd.year}", "lost to" if _won(g, t) else "beat"
+            items = (reach("web_search", f"{espn.NAMES[t]} vs {espn.NAMES[opp]} {when} film breakdown sets plays defense", "--limit", "6") or []) \
+                + (reach("web_search", f"how the {espn.NAMES[opp]} {verb} the {espn.NAMES[t]} {when} coach postgame", "--limit", "5") or [])
             used = 0
             for it in items:
                 url, title = it.get("url") or "", it.get("title") or ""
                 pub = _date(it.get("published_at"))
-                if (used >= 2 or not url or any(x in url for x in NOT_ARTICLE) or not pub or not gd <= pub <= gd + timedelta(days=4)
+                if (used >= 3 or not url or any(x in url for x in NOT_ARTICLE) or not pub or not gd <= pub <= gd + timedelta(days=4)
                         or not _mentions(title, t) or conn.execute("select 1 from film_videos where url=?", (url,)).fetchone()):
                     continue
                 got = reach("web_read", url) or []

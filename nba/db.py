@@ -97,6 +97,9 @@ def migrate(c):
         cols = {r[1] for r in c.execute("pragma table_info(film_items)")}
         if "ato" not in cols:
             c.execute("alter table film_items add column ato int default 0")
+        for col in ("impact", "effect"):              # did the set work, and what it did to the game
+            if col not in cols:
+                c.execute(f"alter table film_items add column {col} text default ''")
 
 
 @contextmanager

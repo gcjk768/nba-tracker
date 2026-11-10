@@ -39,15 +39,27 @@ class FakeWeb:
         return 0, json.dumps({"ok": True, "items": [{"text": ARTICLE}]})
 
 
+def claude_impact(cmd, stdin, timeout):
+    import subprocess
+    out = {"items": [{"team": "PHI", "label": "Horn", "kind": "set", "impact": "worked", "effect": "Embiid scored on it three times late",
+                      "who": "", "summary": "Philly ran horns."},
+                     {"team": "CHI", "label": "switch", "kind": "coverage", "impact": "maybe", "effect": "", "who": "", "summary": "Chicago switched."}]}
+    return subprocess.CompletedProcess(cmd, 0, json.dumps({"result": json.dumps(out)}), "")
+
+
 def test_game_articles_tie_labels_to_the_game_and_search_each_game_once(conn):
     _setup(conn)
     web = FakeWeb()
-    res = si.game_articles(conn, "2026-11-10", "m", ("PHI",), 2027, reach=si.Reach(web, sleep=lambda s: None), claude_runner=claude_ok)
-    rows = {(r["game_id"] != "", r["team"], r["label"]) for r in conn.execute("select * from film_items")}
-    assert rows == {(True, "PHI", "horns"), (True, "CHI", "switch")} and res["stop"] is None
-    assert web.calls == ["search", "read"]                         # old preview and box-score page never read
+    res = si.game_articles(conn, "2026-11-10", "m", ("PHI",), 2027, reach=si.Reach(web, sleep=lambda s: None), claude_runner=claude_impact)
+    rows = {(r["game_id"] != "", r["team"], r["label"], r["impact"], r["effect"]) for r in conn.execute("select * from film_items")}
+    assert rows == {(True, "PHI", "horns", "worked", "Embiid scored on it three times late"), (True, "CHI", "switch", "", "")}
+    assert res["stop"] is None and web.calls == ["search", "search", "read"]   # two angles; old preview and box-score page never read
     again = si.game_articles(conn, "2026-11-10", "m", ("PHI",), 2027, reach=si.Reach(web, sleep=lambda s: None), claude_runner=claude_ok)
-    assert again["games"] == 0 and web.calls == ["search", "read"]
+    assert again["games"] == 0 and web.calls == ["search", "search", "read"]
+    gid = conn.execute("select game_id from games").fetchone()[0]           # a re-read refreshes impact instead of duplicating
+    si._store(conn, gid, "2026-11-08", {"team": "PHI", "kind": "set", "label": "horns", "who": "", "summary": "s", "title": "t",
+                                        "impact": "failed", "effect": "stopped"}, "https://blog/phi-chi", "blog")
+    assert conn.execute("select count(*), max(impact) from film_items where label='horns'").fetchone()[:] == (1, "failed")
 
 
 def test_play_names_are_normalised_and_land_on_the_right_side():
@@ -58,3 +70,26 @@ def test_play_names_are_normalised_and_land_on_the_right_side():
     assert si.normalise("2-3", None) == ("2-3 zone", "coverage")
     assert si.normalise("vibes", "mood") == ("vibes", None)
     assert si.normalise("two-man game", "action")[1] is None                       # vague: could be PnR, handoff or iso
+
+
+def test_tracked_teams_grow_one_at_a_time_by_rating_up_to_the_cap(conn):
+    assert game_log.tracked(conn) == list(game_log.FOCUS)
+    for i, t in enumerate(["BOS", "LAL", "DEN", "NY"]):            # LAL already pinned: skipped
+        conn.execute("insert into ratings(date, team, off, def, net, healthy_net) values ('2026-11-10', ?, 0, 0, 0, ?)", (t, 10 - i))
+    assert game_log.grow(conn) == "BOS" and game_log.grow(conn) == "DEN"
+    assert game_log.tracked(conn) == list(game_log.FOCUS) + ["BOS", "DEN"]
+    game_log.MAX_TEAMS, cap = 6, game_log.MAX_TEAMS
+    try:
+        assert game_log.grow(conn) is None                         # at the cap
+    finally:
+        game_log.MAX_TEAMS = cap
+
+
+def test_horns_variants_and_systems_keep_their_specific_names():
+    from nba import playbook_kb as kb
+    assert si.normalise("Horns Flare", "set") == ("horns flare", "set")
+    assert si.normalise("horn twist", "action") == ("horns twist", "set")
+    assert si.normalise("Triangle offense", "set") == ("triangle", "system")
+    assert si.normalise("Princeton", None) == ("princeton", "system")
+    assert si.normalise("spain action", "action") == ("spain pick-and-roll", "set")
+    assert all(k in kb.SET_TO_PLAYS for k, v in kb.PLAYS.items() if k.startswith("horns ") or v[0] == "system")

@@ -115,7 +115,7 @@ def data(ctx) -> dict:
         "rankings": rankings, "status": status[:40],
         "styles": styles,
         "playbooks": playbooks(ctx, styles),
-        "game_log": game_log(ctx),
+        "game_log": [t for t in game_log(ctx) if not t.startswith("_")],   # tracked teams; each tab loads /games/<T>.json
         "kb": kb_payload(ctx),
         "decides": decides(ctx),
         "ato_league": {k: v for k, v in ato_profiles(ctx).get("_league", {}).items()},
@@ -195,10 +195,16 @@ def plays_all(ctx) -> dict:
 def game_log(ctx) -> dict:
     """Focus teams, game by game: plays run, defense played, reported sets per game. Cached like the other views."""
     from . import game_log as gl
-    k = ("game_log", _key(ctx.conn), ctx.conn.execute("select count(*) from film_items").fetchone()[0])
+    tracked = gl.tracked(ctx.conn)
+    k = ("game_log", _key(ctx.conn), ctx.conn.execute("select count(*) from film_items").fetchone()[0], tuple(tracked))
     if k not in _CACHE:
-        _CACHE[k] = gl.build(ctx.conn, ctx.s.espn_season)
+        _CACHE[k] = gl.build(ctx.conn, ctx.s.espn_season, tracked)
     return _CACHE[k]
+
+
+def game_log_team(ctx, team: str) -> dict | None:
+    G = game_log(ctx)
+    return {**G[team], "league": G["_league"]} if team in G else None
 
 
 def named_sets(ctx, team: str) -> list[dict]:
@@ -537,6 +543,15 @@ def handler_for(ctx):
                 if not td:
                     return self.send_error(404)
                 return self._send(200, "application/json", json.dumps(td, default=str).encode())
+            if path.startswith("/games/") and path.endswith(".json"):
+                conn = db.connect(ctx.s.db_path)
+                try:
+                    gd = game_log_team(replace(ctx, conn=conn, cache={}), path[7:-5])
+                finally:
+                    conn.close()
+                if not gd:
+                    return self.send_error(404)
+                return self._send(200, "application/json", json.dumps(gd, default=str).encode())
             if path not in ("/", "/data.json", "/healthz"):
                 self.send_error(404)
                 return

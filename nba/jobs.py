@@ -1051,12 +1051,13 @@ def film(ctx, key=None):
 
 def _film(ctx, key):
     from . import schemes, social_intel
+    from . import game_log
     res = social_intel.run(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach"),
-                           claude_runner=ctx.runner)
+                           claude_runner=ctx.runner, first=game_log.tracked(ctx.conn))
     arts = social_intel.season_articles(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach_web"), claude_runner=ctx.runner)
     social_intel.season_videos(ctx.conn, key, ctx.s.model_ask, claude_runner=ctx.runner, teams=arts["teams"])
-    from . import game_log
-    garts = social_intel.game_articles(ctx.conn, key, ctx.s.model_ask, game_log.FOCUS, ctx.s.espn_season, claude_runner=ctx.runner)
+    garts = social_intel.game_articles(ctx.conn, key, ctx.s.model_ask, game_log.tracked(ctx.conn), ctx.s.espn_season, claude_runner=ctx.runner)
+    new_team = game_log.grow(ctx.conn) if not garts["left"] and not garts["stop"] else None   # backlog clear: add the next top team
     from . import playbook_kb as kb
     want = [r[0] for r in ctx.conn.execute("select label, count(*) n from film_items group by label order by n desc")]
     want += [x for k, (ctrs, _) in kb.COUNTERS.items() for x in [k] + ctrs]
@@ -1087,7 +1088,8 @@ def _film(ctx, key):
                        f"{len(arts['added'])} from articles on {', '.join(arts['teams'])}"
                        + (f", articles stopped: {arts['stop']}" if arts["stop"] else "")
                        + f", {len(garts['added'])} from {garts['games']} game write-ups ({garts['left']} games left)"
+                       + (f", game by game now tracks {new_team}" if new_team else "")
                        + (f", {len(clash)} contradictions" if clash else "") + (f", stopped: {res['stop']}" if res["stop"] else ""))
     return {"games": res["games"], "labels": len(added), "article_labels": len(arts["added"]), "article_teams": arts["teams"],
-            "game_labels": len(garts["added"]), "game_stop": garts["stop"],
+            "game_labels": len(garts["added"]), "game_stop": garts["stop"], "new_team": new_team,
             "contradictions": len(clash), "stop": res["stop"], "article_stop": arts["stop"], "used": res["used"]}

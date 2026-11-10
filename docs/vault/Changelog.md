@@ -5,6 +5,25 @@ updated: 2026-11-10
 # Changelog
 
 ## 2026-11-10
+- Play calls, not generic actions (the owner: "what type of horns? triangle etc, those type of offense play"). Knowledge
+  base gains the horns family (flare, twist, rip, down, stagger, elbow, high-low, spain, pop, dho, 77), more calls
+  (floppy stagger, chicago flare, elevator, pin-down flare, chin) and offensive systems as kind `system` (triangle,
+  princeton, motion, 5-out motion, 4-out 1-in, flex, dribble drive, spread pick-and-roll, read and react), each with a
+  description and the shots it ends in. Extraction keeps the most specific name ("horns flare", not "horns"); every
+  knowledge-base name feeds `SETS`. Card offense = System · Play calls (worked/failed + effect) · "Also" generic
+  actions. All 44 games and the four teams' season pieces re-read with it.
+- Sets per game and why they won or lost (the owner: "find out what set plays they run and list them, that is important
+  why they win or lose; search YouTube etc with Agent Reach"). Extraction (`prompts/film.md`) now also maps clearly
+  described actions to standard names (two-way phrases dropped) and records `impact` (worked / failed) and `effect`
+  (<= 14 words) per set and coverage: new `film_items` columns, upsert on re-read. Write-ups: two searches per game
+  (team angle + "how the opponent beat / lost to"), up to 3 reads, own budget (`GAME_BUDGET`, 6 games a night). YouTube
+  per-game pass now does tracked teams' games first (subtitles 429 from the home IP on 2026-11-10: stopped, no other
+  backend, per Agent Reach rules). Reddit probed: public search works but returns old, fan-reaction threads; skipped.
+  Card: "Won on / Lost on" (the two biggest margin factors from `insights.game_recipe`), "Sets they ran" with
+  worked/failed and the effect. All 44 games re-read with the new extraction.
+- Game by game grows to top teams (the owner: "slowly add for top teams"): `game_log.tracked` (meta `game_log_teams`) =
+  LAL/SAS/PHI/OKC pinned + `grow()` adds the best healthy-net team not yet tracked, one per night and only when the
+  write-up backlog is clear, up to `MAX_TEAMS` = 10. Each tab loads `/games/<T>.json` (data.json carries only the list).
 - Game by game streamlined (the owner: "too much information, streamline it"). Each card: Offense = sets named for that
   game + "scored most on / struggled with"; Defense = man-to-man + schemes for that game + "held / gave up X pts per
   shot (league Y)" and what hurt them; tables and counters behind "Show the numbers". Season playbook and usual

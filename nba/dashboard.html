@@ -196,6 +196,10 @@ td.r, th.r { text-align: right; }
 .gl .gline > b { font-size: 12px; color: var(--ink-2); padding-top: 4px; }
 .gl .gline .chips { margin-top: 0; }
 .gl .say { margin-top: 6px; color: var(--ink-2); line-height: 1.5; }
+.gl .sets { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
+.gl .sets li { font-size: 13px; line-height: 1.45; }
+.gl .sets .say { margin: 0 0 0 4px; }
+.gl .why { font-size: 13px; color: var(--ink-2); }
 .gl .more summary { cursor: pointer; font-size: 12px; color: var(--ink-3); }
 .gl .more[open] summary { margin-bottom: 8px; }
 .gl .gh { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; }
@@ -470,7 +474,7 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
 
   <section data-page="games" class="block reveal" id="s-gl">
     <div class="sh"><div><h2>Game by game: plays and defense</h2><p id="glSub"></p></div>
-      <div class="seg" id="glSeg" role="group" aria-label="Team" style="flex-shrink:0"></div></div>
+      <div class="seg" id="glSeg" role="group" aria-label="Team" style="flex-shrink:1;max-width:100%;overflow-x:auto"></div></div>
     <div class="glsum" id="glSum"></div>
     <div class="glgrid" id="glList"></div>
   </section>
@@ -785,11 +789,16 @@ function leanKey(label) {
 
 // ---------- game by game (focus teams): plays run and defense played, every final this season ----------
 (function gameLog() {
-  const G = D.game_log || {}, LG = (G._league || {}).pps || 1, teams = Object.keys(G).filter(t => !t.startsWith("_"));
+  const teams = D.game_log || [], G = {};
+  let LG = 1;
   if (!teams.length) { $("s-gl").hidden = true; return; }
-  $("glSub").textContent = "The named plays each team ran and the defense it played, game by game. Orange = named in a write-up of that game. Grey = read from that game's numbers.";
+  $("glSub").textContent = "The named plays each team ran and the defense it played, game by game. Orange = named in a write-up of that game. Grey = read from that game's numbers. ✅ worked · ❌ failed, as the write-up describes it. Top teams are added one at a time as the nightly search catches up.";
   const chip = x => `<button class="sc ${x.source === "this game" ? "rep" : ""}" data-play="${esc(x.label)}" title="${esc(x.summary || x.evidence || x.desc || "")}">${esc(x.label)}</button>`;
   const made = r => `${Math.round(r.success * r.att)} of ${r.att}`;
+  const MARK = {worked: `<span class="up" title="worked">✅</span>`, failed: `<span class="down" title="failed">❌</span>`};
+  const setLine = x => `<li>${MARK[x.impact] || `<span class="muted" title="the write-up does not say if it worked">•</span>`} ${chip(x)}${x.ato ? ' <span class="muted">ATO</span>' : ""}
+    <span class="say">${esc(x.effect || x.summary || "")}</span>${x.url ? ` <a class="muted" href="${esc(x.url)}" target="_blank" rel="noopener">source</a>` : ""}</li>`;
+  const WHY = {shooting: "shooting", turnovers: "turnovers", "off. rebounds": "offensive rebounds", "free throws": "free throws"};
   const card = g => {
     const o = g.offense, d = g.defense, opp = esc(g.opp === "SA" ? "SAS" : g.opp);
     const best = o.plays.filter(r => r.att >= 5).sort((a, b) => b.success * b.att - a.success * a.att)[0];
@@ -799,11 +808,19 @@ function leanKey(label) {
     return `<article class="pb gl">
       <div class="gh"><span class="muted mono">${esc(g.date.slice(5))}</span><span data-open="${esc(g.opp)}" style="display:flex;gap:6px;align-items:center">${g.home ? "vs" : "@"} ${logo(g.opp)} <b>${esc(NAME(g.opp))}</b></span>
         <span class="res ${g.result}">${g.result} ${g.pts}-${g.opp_pts}${g.ot ? " OT" : ""}</span>${g.cup ? `<span class="sc">NBA Cup</span>` : ""}</div>
+      ${g.why.length ? `<div class="why">${g.result === "W" ? "Won on" : "Lost on"}: ${g.why.map(w => `<b>${esc(WHY[w.factor] || w.factor)}</b> ${w.pts > 0 ? "+" : ""}${w.pts.toFixed(1)}`).join(", ")} <span class="muted">pts of margin</span></div>` : ""}
       <div class="gline"><b>Offense</b><div>
-        <div class="chips">${o.sets.filter(x => x.source === "this game").map(chip).join("") || `<span class="muted">No write-up named a set for this game</span>`}</div>
+        ${(() => {
+          const sys = o.sets.filter(x => x.kind === "system"), calls = o.sets.filter(x => x.source === "this game" && x.kind === "set"),
+                acts = o.sets.filter(x => x.source === "this game" && x.kind === "action");
+          return (sys.length ? `<div class="chips"><span class="muted">System:</span> ${sys.map(chip).join("")}</div>` : "")
+            + (calls.length ? `<div class="muted" style="font-size:12px;margin-top:6px">Play calls</div><ul class="sets">${calls.map(setLine).join("")}</ul>`
+                            : `<div class="muted">No play call named for this game yet</div>`)
+            + (acts.length ? `<div class="say">Also: ${acts.map(x => `${MARK[x.impact] || ""} ${esc(x.label)}${x.effect ? ` <span class="muted">(${esc(x.effect)})</span>` : ""}`).join(" · ")}</div>` : ""); })()}
         <div class="say">${best ? `Scored most on <b>${esc(best.play)}</b> (${made(best)})` : ""}${worst ? ` · struggled with <b>${esc(worst.play)}</b> (${made(worst)})` : ""}</div></div></div>
       <div class="gline"><b>Defense</b><div>
-        <div class="chips">${d.schemes.filter(x => x.source !== "season").map(chip).join("")}</div>
+        <div class="chips">${d.schemes.filter(x => x.source !== "season" && !x.effect).map(chip).join("")}</div>
+        ${d.schemes.some(x => x.effect) ? `<ul class="sets">${d.schemes.filter(x => x.effect).map(setLine).join("")}</ul>` : ""}
         <div class="say"><span class="${held ? "up" : "down"}">${held ? "Held" : "Gave up"} ${opp} ${d.opp_pps.toFixed(2)} pts per shot</span> <span class="muted">(league ${LG.toFixed(2)})</span>${d.forced_tov ? ` · forced ${d.forced_tov} turnovers` : ""}${hurt ? ` · ${opp} hurt them with <b>${esc(hurt.play)}</b> (${made(hurt)})` : ""}</div></div></div>
       <details class="more"><summary>Show the numbers</summary>
         <table class="pt"><thead><tr><th>How their shots came</th><th class="r">Made</th><th class="r">League</th></tr></thead><tbody>
@@ -814,17 +831,25 @@ function leanKey(label) {
         ${d.tendencies.length ? `<div class="meta">Also: ${d.tendencies.map(x => esc(x.label)).join(", ")} <span class="muted">(read from this game's shots)</span></div>` : ""}
       </details></article>`;
   };
-  const show = t => {
+  const show = async t => {
     document.querySelectorAll("#glSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.t === t));
+    if (!G[t]) {
+      $("glList").innerHTML = `<div class="muted">Loading</div>`;
+      try { G[t] = await (await fetch(`/games/${encodeURIComponent(t)}.json`)).json(); }
+      catch (e) { $("glList").innerHTML = `<div class="muted">Could not load ${esc(t)}.</div>`; return; }
+    }
     const T = G[t], g0 = T.games[0] || {offense: {sets: []}, defense: {schemes: []}};
+    LG = (T.league || {}).pps || 1;
     const games = n => `${n} game${n > 1 ? "s" : ""}`;
     const other = T.def_counts.filter(([k]) => k !== "man-to-man").map(([k, n]) => `${k} (${games(n)})`);
     const seasonD = g0.defense.schemes.filter(x => x.source === "season").map(x => x.label);
-    const seasonO = g0.offense.sets.filter(x => x.source === "season").map(x => x.label);
-    const named = T.set_counts.map(([k, n]) => `${k} (${games(n)})`);
+    const seasonO = g0.offense.sets.filter(x => x.source === "season" && x.kind === "set").map(x => x.label);
+    const systems = [...new Set(T.system_counts.map(([k]) => k))];
+    const named = T.call_counts.map(([k, n]) => `${k} (${games(n)})`);
     $("glSum").innerHTML = `<div><b>${esc(NAME(t))}</b> ${esc(T.record)}</div>
-      <div><b>Season playbook:</b> ${esc(seasonO.join(", ")) || "no breakdown yet"}${seasonD.length ? ` · <b>usual coverage:</b> ${esc(seasonD.join(", "))}` : ""}</div>
-      <div><b>Seen in games:</b> ${esc(named.concat(other).join(", ")) || "nothing named yet"} · man-to-man base every game</div>`;
+      <div><b>Offense system:</b> ${esc(systems.join(", ")) || "not named in any breakdown yet"}</div>
+      <div><b>Play calls named:</b> ${esc(named.join(", ")) || "none in game write-ups yet"}${seasonO.length ? ` · <b>season playbook:</b> ${esc(seasonO.join(", "))}` : ""}</div>
+      <div><b>Defense:</b> man-to-man base${other.length ? ", " + esc(other.join(", ")) : ""}${seasonD.length ? ` · <b>usual coverage:</b> ${esc(seasonD.join(", "))}` : ""}</div>`;
     $("glList").innerHTML = T.games.map(card).join("") || `<div class="muted">No finished games yet.</div>`;
   };
   $("glSeg").innerHTML = teams.map(t => `<button data-t="${esc(t)}" aria-pressed="false">${esc(t === "SA" ? "SAS" : t)}</button>`).join("");
