@@ -190,8 +190,14 @@ td.r, th.r { text-align: right; }
 .pr.t5 { background: color-mix(in srgb, var(--good) 22%, transparent); border-color: transparent; color: var(--ink); }
 .pr.b5 { background: color-mix(in srgb, var(--bad) 20%, transparent); border-color: transparent; color: var(--ink); }
 .pbs { border-top: 1px solid var(--line); padding-top: 10px; }
-.glgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 14px; margin-top: 14px; }
-@media (max-width: 560px) { .glgrid { grid-template-columns: 1fr; } }
+.glgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 14px; margin-top: 14px; }
+@media (max-width: 480px) { .glgrid { grid-template-columns: 1fr; } }
+.gl .gline { display: grid; grid-template-columns: 70px 1fr; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; font-size: 13px; }
+.gl .gline > b { font-size: 12px; color: var(--ink-2); padding-top: 4px; }
+.gl .gline .chips { margin-top: 0; }
+.gl .say { margin-top: 6px; color: var(--ink-2); line-height: 1.5; }
+.gl .more summary { cursor: pointer; font-size: 12px; color: var(--ink-3); }
+.gl .more[open] summary { margin-bottom: 8px; }
 .gl .gh { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; }
 .gl .gh .res { font-weight: 700; } .gl .gh .res.W { color: var(--good); } .gl .gh .res.L { color: var(--bad); }
 .gl .two { gap: 14px; }
@@ -779,50 +785,46 @@ function leanKey(label) {
 
 // ---------- game by game (focus teams): plays run and defense played, every final this season ----------
 (function gameLog() {
-  const G = D.game_log || {}, teams = Object.keys(G);
+  const G = D.game_log || {}, LG = (G._league || {}).pps || 1, teams = Object.keys(G).filter(t => !t.startsWith("_"));
   if (!teams.length) { $("s-gl").hidden = true; return; }
-  $("glSub").textContent = "Every game this season, newest first. Named sets (horns, flare, Spain pick-and-roll...) and named defenses (man-to-man, drop, switch, 2-3 or 3-2 zone...) come from breakdowns and recaps: orange = named for that game, grey = the team's season playbook. Public play-by-play never logs the set or defense of a possession, so how possessions ended and the tendencies are measured from that game's shots.";
-  const cnt = arr => arr.map(([k, n]) => `<span class="sc" title="${n} game${n > 1 ? "s" : ""}">${esc(k)} ×${n}</span>`).join("");
-  const est = e => e ? `<span class="${e.success <= e.lg ? "up" : "down"}" title="opponents' make rate on the shots this scheme usually gives up, ${e.att} shots this game, league ${pct(e.lg)}">opp ${pct(e.success)}*</span>` : "";
-  const style = l => `<span class="sc" title="Inferred, confidence ${Math.round(100 * l.confidence)}%: ${esc(l.evidence)}">${esc(l.label.split(" (")[0])}</span>`;
+  $("glSub").textContent = "The named plays each team ran and the defense it played, game by game. Orange = named in a write-up of that game. Grey = read from that game's numbers.";
+  const chip = x => `<button class="sc ${x.source === "this game" ? "rep" : ""}" data-play="${esc(x.label)}" title="${esc(x.summary || x.evidence || x.desc || "")}">${esc(x.label)}</button>`;
+  const made = r => `${Math.round(r.success * r.att)} of ${r.att}`;
   const card = g => {
-    const o = g.offense, d = g.defense;
+    const o = g.offense, d = g.defense, opp = esc(g.opp === "SA" ? "SAS" : g.opp);
+    const best = o.plays.filter(r => r.att >= 5).sort((a, b) => b.success * b.att - a.success * a.att)[0];
+    const worst = o.plays.filter(r => r.att >= 6 && r.success < r.lg_success && r !== best).sort((a, b) => a.success - b.success)[0];
+    const hurt = d.allowed.slice().sort((a, b) => b.success * b.att - a.success * a.att)[0];
+    const held = d.opp_pps <= LG;
     return `<article class="pb gl">
-      <div class="gh"><span class="muted mono">${esc(g.date)}</span><span data-open="${esc(g.opp)}" style="display:flex;gap:6px;align-items:center">${g.home ? "vs" : "@"} ${logo(g.opp)} <b>${esc(NAME(g.opp))}</b></span>
+      <div class="gh"><span class="muted mono">${esc(g.date.slice(5))}</span><span data-open="${esc(g.opp)}" style="display:flex;gap:6px;align-items:center">${g.home ? "vs" : "@"} ${logo(g.opp)} <b>${esc(NAME(g.opp))}</b></span>
         <span class="res ${g.result}">${g.result} ${g.pts}-${g.opp_pts}${g.ot ? " OT" : ""}</span>${g.cup ? `<span class="sc">NBA Cup</span>` : ""}</div>
-      <div class="two">
-        <div class="pbs"><h4>Offense: named sets</h4>
-          ${o.sets.length ? `<table class="pt"><tbody>${o.sets.map(x => `<tr><td><button class="sc ${x.source === "this game" ? "rep" : ""}" data-play="${esc(x.label)}" title="${esc(x.summary || "")}">${esc(x.label)}</button>${x.ato ? ' <span class="muted">ATO</span>' : ""}
-              <span class="grp">${x.source === "this game" ? "run this game" : "season playbook"} · <a href="${esc(x.url)}" target="_blank" rel="noopener">src</a></span></td>
-            <td class="r num" title="${x.estimate ? "est.: how often the shots this set usually ends in went in this game (" + x.estimate.att + " shots), league " + pct(x.estimate.lg) : "no estimate"}">${x.estimate ? `<span class="${x.estimate.success >= x.estimate.lg ? "up" : "down"}">${pct(x.estimate.success)}*</span>` : ""}</td></tr>`).join("")}</tbody></table>`
-            : `<div class="muted" style="font-size:13px">No set named yet for this team. The film room reads write-ups of every game nightly.</div>`}
-          <h4 style="margin-top:12px">How possessions ended <span class="muted" style="font-weight:400">measured</span></h4>
-          <table class="pt"><thead><tr><th>Shot</th><th class="r">Shots</th><th class="r">Made</th></tr></thead><tbody>
-          ${o.plays.map(r => `<tr><td><button class="sc plink3" data-play="${esc(r.explain)}">${esc(r.play)}</button></td><td class="r num">${r.att}</td>
-            <td class="r num ${r.success >= r.lg_success ? "up" : "down"}" title="league ${pct(r.lg_success, 1)}">${pct(r.success)}</td></tr>`).join("")}</tbody></table>
-          <div class="meta">3PA ${pct(o.three_rate)} · rim ${pct(o.rim_rate)} · assisted ${pct(o.assisted)} · transition ${pct(o.transition)} · ${o.pps.toFixed(2)} pts/shot</div>
-          <div class="chips">${o.styles.map(style).join("") || `<span class="muted">balanced, no clear lean</span>`}</div></div>
-        <div class="pbs"><h4>Defense: named schemes</h4>
-          <table class="pt"><tbody>${d.schemes.map(x => `<tr><td><button class="sc ${x.source === "this game" ? "rep" : ""}" data-play="${esc(x.label)}" title="${esc(x.evidence || x.summary || x.desc || "")}">${esc(x.label)}</button>
-            <span class="grp">${x.source === "base" ? "base: every NBA team" : esc(x.group) + " · " + {"this game": "played this game", season: "season playbook", inferred: "inferred from this game"}[x.source]}${x.url ? ` · <a href="${esc(x.url)}" target="_blank" rel="noopener">src</a>` : ""}</span></td>
-            <td class="r num">${est(x.estimate)}</td>
-            <td><div class="ctr" title="${esc(x.why)}">${x.counters.map(c => `<button class="sc" data-play="${esc(c)}">${esc(c)}</button>`).join("")}</div></td></tr>`).join("")}</tbody></table>
-          ${d.schemes.some(x => x.group === "zone" || x.group === "junk") ? "" : `<div class="meta">Zone (2-3, 3-2, 1-3-1, box-and-one): none reported for this game.</div>`}
-          ${d.tendencies.length ? `<div class="chips"><span class="muted">Tendencies:</span> ${d.tendencies.map(x => `<button class="sc" data-play="${esc(x.label)}" title="Inferred from this game: ${esc(x.evidence)}">${esc(x.label)}</button>`).join("")}</div>` : ""}
-          <div class="meta">Opponent shots: rim ${pct(d.opp_rim)} · 3PA ${pct(d.opp_three)} · mid ${pct(d.opp_mid)} · ${d.opp_pps.toFixed(2)} pts/shot · forced ${d.forced_tov ?? "n/a"} TOV · ${d.blocks} blocks${d.anchor ? ` (${esc(d.anchor)})` : ""}</div>
-          ${d.allowed.length ? `<div class="meta">They ran most against them: ${d.allowed.map(r => `<b>${esc(r.play)}</b> ${r.att} (${pct(r.success)} in)`).join(" · ")}</div>` : ""}</div>
-      </div></article>`;
+      <div class="gline"><b>Offense</b><div>
+        <div class="chips">${o.sets.filter(x => x.source === "this game").map(chip).join("") || `<span class="muted">No write-up named a set for this game</span>`}</div>
+        <div class="say">${best ? `Scored most on <b>${esc(best.play)}</b> (${made(best)})` : ""}${worst ? ` · struggled with <b>${esc(worst.play)}</b> (${made(worst)})` : ""}</div></div></div>
+      <div class="gline"><b>Defense</b><div>
+        <div class="chips">${d.schemes.filter(x => x.source !== "season").map(chip).join("")}</div>
+        <div class="say"><span class="${held ? "up" : "down"}">${held ? "Held" : "Gave up"} ${opp} ${d.opp_pps.toFixed(2)} pts per shot</span> <span class="muted">(league ${LG.toFixed(2)})</span>${d.forced_tov ? ` · forced ${d.forced_tov} turnovers` : ""}${hurt ? ` · ${opp} hurt them with <b>${esc(hurt.play)}</b> (${made(hurt)})` : ""}</div></div></div>
+      <details class="more"><summary>Show the numbers</summary>
+        <table class="pt"><thead><tr><th>How their shots came</th><th class="r">Made</th><th class="r">League</th></tr></thead><tbody>
+          ${o.plays.map(r => `<tr><td><button class="sc plink3" data-play="${esc(r.explain)}">${esc(r.play)}</button></td><td class="r num ${r.success >= r.lg_success ? "up" : "down"}">${made(r)}</td><td class="r num muted">${pct(r.lg_success)}</td></tr>`).join("")}</tbody></table>
+        <table class="pt" style="margin-top:8px"><thead><tr><th>Their defense</th><th>How to beat it</th></tr></thead><tbody>
+          ${d.schemes.map(x => `<tr><td>${chip(x)}<span class="grp">${{"this game": "played this game", season: "season playbook", inferred: "read from this game's shots", base: "every NBA team's base"}[x.source]}${x.url ? ` · <a href="${esc(x.url)}" target="_blank" rel="noopener">source</a>` : ""}</span></td>
+            <td><div class="ctr" title="${esc(x.why)}">${x.counters.map(c => `<button class="sc" data-play="${esc(c)}">${esc(c)}</button>`).join("") || `<span class="muted">n/a</span>`}</div></td></tr>`).join("")}</tbody></table>
+        ${d.tendencies.length ? `<div class="meta">Also: ${d.tendencies.map(x => esc(x.label)).join(", ")} <span class="muted">(read from this game's shots)</span></div>` : ""}
+      </details></article>`;
   };
   const show = t => {
     document.querySelectorAll("#glSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.t === t));
-    const T = G[t];
-    $("glSum").innerHTML = `<div><b>${esc(NAME(t))}</b> ${esc(T.record)} in ${T.games.length} games tracked</div>
-      <div class="chips"><span class="muted">Defensive schemes (games):</span> ${cnt(T.def_counts)}</div>
-      <div class="chips"><span class="muted">Sets named in game write-ups:</span> ${cnt(T.set_counts) || `<span class="muted">none yet</span>`}</div>
-      <div class="chips"><span class="muted">Defensive tendencies:</span> ${cnt(T.tendency_counts) || `<span class="muted">none</span>`}</div>
-      <div class="chips"><span class="muted">Offense leans:</span> ${cnt(T.off_counts) || `<span class="muted">none</span>`}</div>
-      <div class="chips"><span class="muted">Most-used play (games it led):</span> ${cnt(T.play_counts)}</div>
-      <div class="meta muted" style="font-size:12px">* Opponents' make rate on the shots that scheme usually gives up (green = better than league). An estimate: public data never logs the defense on each possession.</div>`;
+    const T = G[t], g0 = T.games[0] || {offense: {sets: []}, defense: {schemes: []}};
+    const games = n => `${n} game${n > 1 ? "s" : ""}`;
+    const other = T.def_counts.filter(([k]) => k !== "man-to-man").map(([k, n]) => `${k} (${games(n)})`);
+    const seasonD = g0.defense.schemes.filter(x => x.source === "season").map(x => x.label);
+    const seasonO = g0.offense.sets.filter(x => x.source === "season").map(x => x.label);
+    const named = T.set_counts.map(([k, n]) => `${k} (${games(n)})`);
+    $("glSum").innerHTML = `<div><b>${esc(NAME(t))}</b> ${esc(T.record)}</div>
+      <div><b>Season playbook:</b> ${esc(seasonO.join(", ")) || "no breakdown yet"}${seasonD.length ? ` · <b>usual coverage:</b> ${esc(seasonD.join(", "))}` : ""}</div>
+      <div><b>Seen in games:</b> ${esc(named.concat(other).join(", ")) || "nothing named yet"} · man-to-man base every game</div>`;
     $("glList").innerHTML = T.games.map(card).join("") || `<div class="muted">No finished games yet.</div>`;
   };
   $("glSeg").innerHTML = teams.map(t => `<button data-t="${esc(t)}" aria-pressed="false">${esc(t === "SA" ? "SAS" : t)}</button>`).join("");

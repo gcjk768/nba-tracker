@@ -39,7 +39,7 @@ SETS = {   # normalised label -> kind; anything else Claude returns is kept as "
 # what writers call the same thing -> one name (2026-11-10: "horn", "back door", "ball screen" showed up as separate plays)
 ALIASES = {"horn": "horns", "horns set": "horns", "back door": "backdoor cuts", "backdoor": "backdoor cuts", "backdoor cut": "backdoor cuts",
            "ball screen": "pick-and-roll", "screen-and-roll": "pick-and-roll", "pick and roll": "pick-and-roll", "pnr": "pick-and-roll",
-           "two-man game": "pick-and-roll", "spain pnr": "spain pick-and-roll", "spain pick and roll": "spain pick-and-roll",
+           "spain pnr": "spain pick-and-roll", "spain pick and roll": "spain pick-and-roll",
            "pick and pop": "pick-and-pop", "handoff": "dho", "dribble hand-off": "dho", "dribble handoff": "dho", "iso": "isolation",
            "post up": "post-up", "switching": "switch", "switch everything": "switch", "drop coverage": "drop", "zone defense": "zone",
            "2-3": "2-3 zone", "3-2": "3-2 zone", "1-3-1": "1-3-1 zone", "scrambles": "scramble", "veer switches": "veer switch",
@@ -47,9 +47,15 @@ ALIASES = {"horn": "horns", "horns set": "horns", "back door": "backdoor cuts", 
            "man to man": "man-to-man", "lobs": "lob", "alley oop": "alley-oop"}
 
 
+NOT_A_PLAY = {"two-man game", "two man game", "ball movement", "motion", "effort", "transition"}   # too vague to name a set
+
+
 def normalise(label: str, kind: str | None) -> tuple[str, str | None]:
-    """One name per play, and the side the name belongs to (a coverage named by the writer is never an offensive set)."""
+    """One name per play, and the side the name belongs to (a coverage named by the writer is never an offensive set).
+    Vague phrases ("two-man game" can be a pick-and-roll, a handoff or an isolation) get no kind, so they are dropped."""
     label = ALIASES.get(label.strip().lower(), label.strip().lower())
+    if label in NOT_A_PLAY:
+        return label, None
     return label, SETS.get(label) or (kind if kind in ("set", "action", "coverage") else None)
 CONTRADICTS = {   # reported coverage vs our inferred defense label that it argues against
     "switch": ("Concedes the mid-range (drop-style)",),

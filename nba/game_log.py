@@ -88,11 +88,11 @@ def build(conn, season, teams=FOCUS) -> dict:
     tov_pct, _ = _pcts({k: {"tov": (b["tov"] or 0) / max(1, b["poss"] or 1)} for k, b in box.items()})   # key = team that turned it over
     films, season_named = defaultdict(list), defaultdict(dict)
     for r in conn.execute("""select team, kind, label, count(*) n, max(url) url, max(summary) summary from film_items
-                             group by team, kind, label order by n desc"""):
+                             where game_id = '' group by team, kind, label order by n desc"""):   # season pieces only
         season_named[r["team"]][r["label"]] = dict(r)
     for r in conn.execute("select * from film_items where game_id != '' order by id"):
         films[(r["game_id"], r["team"])].append(dict(r))
-    out = {}
+    out = {"_league": {"pps": round(sum(x["pts"] for x in S) / max(1, len(S)), 3)}}
     for t in teams:
         games = []
         for g in conn.execute("""select * from games where season=? and status='final' and source is not null and ? in (home, away)

@@ -5,6 +5,13 @@ updated: 2026-11-10
 # Changelog
 
 ## 2026-11-10
+- Game by game streamlined (the owner: "too much information, streamline it"). Each card: Offense = sets named for that
+  game + "scored most on / struggled with"; Defense = man-to-man + schemes for that game + "held / gave up X pts per
+  shot (league Y)" and what hurt them; tables and counters behind "Show the numbers". Season playbook and usual
+  coverage listed once in the team summary (season pieces only, `film_items.game_id = ''`), not repeated per card.
+- Second source check, all 34 focus-team labels incl. season ones: 23 confirmed in the text, 11 behind sites that block
+  the browser (NBC Sports Philadelphia, Lakers Wire, allphly, Exa podcast pages). "two-man game" is no longer mapped
+  to pick-and-roll (it can be a handoff or an isolation): `NOT_A_PLAY`, the two PHI rows removed.
 - Play names checked against their sources (the owner: "are you sure the play name is correct?"). Every per-game label
   for LAL/SAS/PHI/OKC was re-read with the NAS browser: team and play matched the text for all readable sources except
   one (OKC "drop" vs SAS 10-20: the piece said defenses in general drop on Kornet; removed). NBC Sports Philadelphia,

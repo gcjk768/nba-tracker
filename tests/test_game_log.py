@@ -20,6 +20,8 @@ def test_game_log_measures_each_game_and_attaches_only_that_games_reports(conn):
     assert list(labels)[0] == "man-to-man" and labels["2-3 zone"] == "this game"
     assert labels["drop"] in ("season", "inferred")                # season piece is labelled season, never "this game"
     assert [(x["label"], x["source"]) for x in g["offense"]["sets"]] == [("horns", "this game")]
+    conn.execute("""insert into film_items(game_id, date, team, kind, label, summary, url) values ('other', '2026-11-01', 'PHI', 'set', 'floppy', 'x', 'u')""")
+    assert "floppy" not in [x["label"] for x in game_log.build(conn, 2027, teams=("PHI",))["PHI"]["games"][0]["offense"]["sets"]]   # another game's set
     assert all(x["counters"] for x in g["defense"]["schemes"]) and G["def_counts"][0] == ("man-to-man", 1)
 
 
@@ -55,3 +57,4 @@ def test_play_names_are_normalised_and_land_on_the_right_side():
     assert si.normalise("scramble", "action") == ("scramble", "coverage")          # a defensive rotation, not an offensive set
     assert si.normalise("2-3", None) == ("2-3 zone", "coverage")
     assert si.normalise("vibes", "mood") == ("vibes", None)
+    assert si.normalise("two-man game", "action")[1] is None                       # vague: could be PnR, handoff or iso
