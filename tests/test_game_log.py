@@ -89,7 +89,8 @@ def test_horns_variants_and_systems_keep_their_specific_names():
     from nba import playbook_kb as kb
     assert si.normalise("Horns Flare", "set") == ("horns flare", "set")
     assert si.normalise("horn twist", "action") == ("horns twist", "set")
-    assert si.normalise("Triangle offense", "set") == ("triangle", "system")
-    assert si.normalise("Princeton", None) == ("princeton", "system")
+    assert si.normalise("Triangle offense", "system") == ("triangle", "system")
+    assert si.normalise("Princeton", "system") == ("princeton", "system")
+    assert si.normalise("5-out", "set")[1] is None          # a one-lineup look is not the team's system
     assert si.normalise("spain action", "action") == ("spain pick-and-roll", "set")
     assert all(k in kb.SET_TO_PLAYS for k, v in kb.PLAYS.items() if k.startswith("horns ") or v[0] == "system")

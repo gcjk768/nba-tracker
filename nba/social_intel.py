@@ -66,6 +66,8 @@ def normalise(label: str, kind: str | None) -> tuple[str, str | None]:
     label = ALIASES.get(label.strip().lower(), label.strip().lower())
     if label in NOT_A_PLAY:
         return label, None
+    if SETS.get(label) == "system" and kind != "system":      # a system only when the text says it is the base offense
+        return label, None                                     # (2026-11-10: "Mamu lets LA play five-out" became LAL's system)
     return label, SETS.get(label) or (kind if kind in ("set", "action", "coverage", "system") else None)
 CONTRADICTS = {   # reported coverage vs our inferred defense label that it argues against
     "switch": ("Concedes the mid-range (drop-style)",),

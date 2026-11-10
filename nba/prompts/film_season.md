@@ -12,6 +12,9 @@ horns stagger, horns elbow, horns high-low, horns spain, horns pop, horns dho, h
 floppy stagger, chicago flare, elevator, pin-down flare, double drag, 77, chin, blind pig.
 Offensive systems (the team's whole way of playing, kind "system"): triangle, princeton, motion offense, 5-out motion,
 4-out 1-in, flex, dribble drive, spread pick-and-roll, read and react, delay.
+Only call something a system when the text says it is the team's base or core offense ("their offense is built on",
+"they run Princeton", "their system"). A look that depends on one player or one lineup ("X lets them play
+five-out", "when Y sits they go five-out") is NOT a system: leave it out.
 
 Rules
 - Only this team, only the 2026-27 season. Ignore other teams, past seasons, general coaching talk.

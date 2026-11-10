@@ -5,6 +5,10 @@ updated: 2026-11-10
 # Changelog
 
 ## 2026-11-10
+- Fix: LAL showed "5-out" as its offensive system (the owner: "is 5-out for Lakers? are you sure?"). The source (Silver
+  Screen and Roll, Oct 14) only says Mamukelashvili "brings the ability for LA to operate with five-out spacing": a
+  one-lineup look, not the base offense. Prompt now allows a system only when the text says it is the team's base or
+  core offense, and `normalise` drops system names the model did not mark as a system. Row removed.
 - Play calls, not generic actions (the owner: "what type of horns? triangle etc, those type of offense play"). Knowledge
   base gains the horns family (flare, twist, rip, down, stagger, elbow, high-low, spain, pop, dho, 77), more calls
   (floppy stagger, chicago flare, elevator, pin-down flare, chin) and offensive systems as kind `system` (triangle,
