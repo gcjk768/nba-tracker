@@ -430,7 +430,7 @@ def _film(c, team, inferred):
 def cup_table(c, season) -> dict:
     """Emirates NBA Cup group play. ESPN tags the games but not the group, so the groups are the connected sets of
     teams that meet in Cup games (5 per group, 4 games each). Ties: head-to-head among the tied teams, then point
-    difference, then points scored. Group winners + the best runner-up per conference reach the quarterfinals."""
+    difference, then points scored (all on win %, as teams have played different numbers of games). Group winners + the best runner-up per conference reach the quarterfinals."""
     games = [dict(r) for r in c.execute("""select date, home, away, status, home_pts, away_pts from games
                                             where season=? and note like 'NBA Cup - Group%' order by date""", (season,))]
     if not games:
@@ -462,11 +462,13 @@ def cup_table(c, season) -> dict:
         rows = [{**rec[x], "pd": rec[x]["pf"] - rec[x]["pa"], "left": max(0, 4 - rec[x]["w"] - rec[x]["l"]), "flag": ""}
                 for x in comp]
 
-        def h2h(r, rows=rows):          # wins against the teams level with it on wins
-            level = {x["team"] for x in rows if x["w"] == r["w"]}
+        pct = lambda r: r["w"] / (r["w"] + r["l"]) if r["w"] + r["l"] else 0.0
+
+        def h2h(r, rows=rows):          # wins against the teams level with it on win %
+            level = {x["team"] for x in rows if pct(x) == pct(r)}
             return sum(1 for g in done if {g["home"], g["away"]} <= level and r["team"] in (g["home"], g["away"])
                        and (g["home_pts"] > g["away_pts"]) == (g["home"] == r["team"]))
-        rows.sort(key=lambda r: (-r["w"], -h2h(r), -r["pd"], -r["pf"], r["team"]))
+        rows.sort(key=lambda r: (-pct(r), -h2h(r), -r["pd"], -r["pf"], r["team"]))
         played = any(r["w"] + r["l"] for r in rows)
         if played:
             rows[0]["flag"] = "leads group"
@@ -477,7 +479,7 @@ def cup_table(c, season) -> dict:
             g["name"] = f"{conf} · group {i}"
         second = [g["rows"][1] for g in mine if g["played"] and len(g["rows"]) > 1]
         if second:
-            max(second, key=lambda r: (r["w"], r["pd"], r["pf"]))["flag"] = "wild card"
+            max(second, key=lambda r: (r["w"] / max(1, r["w"] + r["l"]), r["pd"], r["pf"]))["flag"] = "wild card"
     groups.sort(key=lambda g: g["conf"] != "East")
     return {"groups": groups, "nights": sorted({g["date"] for g in games})}
 

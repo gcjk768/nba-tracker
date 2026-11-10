@@ -53,10 +53,12 @@ def test_cup_table_ranks_groups_and_flags_wild_cards(conn):
     assert all(r["w"] + r["l"] == 0 and not r["flag"] for gr in web.cup_table(conn, 2027)["groups"] for r in gr["rows"])
     conn.execute("update games set status='final', source='espn', home_pts=110, away_pts=100 where game_id in ('ATLBOS','CLEIND','BOSCHA')")
     conn.execute("update games set status='final', source='espn', home_pts=101, away_pts=100 where game_id='ATLCHA'")
+    conn.execute("update games set status='final', source='espn', home_pts=110, away_pts=100 where game_id='CHIWSH'")
+    conn.execute("update games set home_pts=140 where game_id='BOSCHA'")       # BOS 1-1 +30 vs CHI 1-0 +10
     cup = web.cup_table(conn, 2027)
     assert [gr["name"] for gr in cup["groups"]][:2] == ["East · group 1", "East · group 2"] and len(cup["groups"]) == 3
     a = cup["groups"][0]["rows"]
-    assert [r["team"] for r in a[:2]] == ["ATL", "BOS"] and a[0]["flag"] == "leads group" and (a[0]["w"], a[0]["l"]) == (2, 0)
-    assert a[0]["pd"] == 11 and a[0]["left"] == 2
-    assert a[1]["flag"] == "wild card"                                  # BOS 1-1 beats every other East runner-up
+    assert [r["team"] for r in a[:3]] == ["ATL", "CHI", "BOS"]               # by win %: CHI 1-0 above BOS 1-1
+    assert a[0]["flag"] == "leads group" and (a[0]["w"], a[0]["l"]) == (2, 0) and a[0]["pd"] == 11 and a[0]["left"] == 2
+    assert a[1]["flag"] == "wild card"                                  # CHI 1-0 beats every other East runner-up
     assert cup["nights"] == ["2026-11-13"]

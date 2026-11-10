@@ -62,3 +62,19 @@ def test_storing_the_box_keeps_the_cup_note(conn):
     collector.upsert_schedule_row(conn, {**parsed["game"], "status": "scheduled", "note": "NBA Cup - Group Play"})
     collector.store_game(conn, parsed, "espn")
     assert conn.execute("select note from games where game_id='401909945'").fetchone()[0] == "NBA Cup - Group Play"
+
+
+def test_collect_tags_cup_games_new_and_already_stored(conn):
+    sb = load("scoreboard_20261108.json")
+    ev = sb["events"][0]
+    ev["competitions"][0]["notes"] = [{"headline": "NBA Cup - Group Play"}]
+
+    class Cup(FakeClient):
+        def scoreboard(self, d):
+            return sb
+    collector.collect_date(conn, Cup(), "2026-11-08", 2027)                   # new final: note comes from the scoreboard
+    q = "select note from games where game_id=?"
+    assert conn.execute(q, (ev["id"],)).fetchone()[0] == "NBA Cup - Group Play"
+    conn.execute("update games set note=null")                                 # a final stored before the fix
+    collector.collect_date(conn, Cup(), "2026-11-08", 2027)
+    assert conn.execute(q, (ev["id"],)).fetchone()[0] == "NBA Cup - Group Play"

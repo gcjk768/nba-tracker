@@ -84,9 +84,14 @@ def collect_date(conn, client, d: str, season: int, hoopr=fallback) -> CollectRe
             upsert_schedule_row(conn, g)
             continue
         if _stored_final(conn, g["game_id"]):
+            if g["note"]:                    # finals stored before the note fix lost their NBA Cup tag: put it back
+                with db.LOCK:
+                    conn.execute("update games set note=? where game_id=? and note is null", (g["note"], g["game_id"]))
             continue
         try:
-            store_game(conn, espn.parse_summary(client.summary(g["game_id"])), "espn")
+            parsed = espn.parse_summary(client.summary(g["game_id"]))
+            parsed["game"]["note"] = parsed["game"].get("note") or g["note"]     # summaries carry no note
+            store_game(conn, parsed, "espn")
             res.new_games.append(g["game_id"])
         except Exception as e:
             log.warning("ESPN summary failed for %s: %s", g["game_id"], e)

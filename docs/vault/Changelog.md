@@ -5,9 +5,14 @@ updated: 2026-11-10
 # Changelog
 
 ## 2026-11-10
+- Fix: the Cup table missed the 19 group games already played (Oct 30, Nov 6) (the owner: "Emirates NBA Cup already
+  started"). Their tag was wiped when the box score was stored (the bug below), and nothing restored a stored final's
+  note. `collect_date` now carries the scoreboard note into `store_game` and fills a missing note on stored finals;
+  past dates were re-read once on the NAS to repair them.
 - Emirates NBA Cup table on the dashboard (after Standings). ESPN tags Cup games ("NBA Cup - Group Play") but not the
   group, so `web.cup_table` finds the 6 groups as the connected sets of teams that meet in Cup games. W-L, point diff,
-  points, games left; ties by head-to-head among tied teams, then diff, then points; flags "leads group" and the
+  points, games left; ranked by win % (teams have played different numbers of games), ties by head-to-head among
+  tied teams, then diff, then points; flags "leads group" and the
   best runner-up per conference as "wild card". Row opens the team drawer.
 - Fix: storing a box score wiped the game's note (ESPN summaries and hoopR have none), so a finished Cup game lost its
   Cup tag, and the Cup final would have counted in the standings. `collector.store_game` keeps the schedule's note.
