@@ -10,8 +10,10 @@ import hashlib
 import json
 import logging
 import re
+import unicodedata
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -217,18 +219,40 @@ def collect(conn, model, injury_json=None, reach=None, teams_tonight=(), today=N
     return kept
 
 
-def recent(conn, hours=48, team=None, limit=40) -> list[dict]:
+def sgt_today() -> str:
+    return datetime.now(ZoneInfo("Asia/Singapore")).date().isoformat()     # SGT date = tonight's US slate date
+
+
+def _ascii(s):
+    return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+
+
+def _played_since(conn, name, since) -> bool:
+    """True if the player logged minutes in a game that tipped after `since` (the news is overtaken by events)."""
+    return conn.execute("""select 1 from player_box p join games g on g.game_id = p.game_id
+                           where lower(p.name) = ? and p.dnp = 0 and substr(g.tip_utc, 1, 16) > ? limit 1""",
+                        (_ascii(name), (since or "")[:16])).fetchone() is not None
+
+
+def recent(conn, hours=48, team=None, limit=40, today=None) -> list[dict]:
+    """Kept news from the last `hours`. 'tonight' is worked out now from today's slate (the stored flag is from
+    ingest time), and availability news about a player who has played since it came out is dropped."""
     with db.LOCK:
         conn.executescript(SCHEMA)
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
-    rows = [dict(r) for r in conn.execute("""select * from news_items where kept=1 and ts >= ? order by tonight desc,
-                                              coalesce(impact, 0) desc, ts desc limit ?""", (since, limit * 3))]
-    for r in rows:
+    slate = {t for g in conn.execute("select home, away from games where date=?", (today or sgt_today(),)) for t in g}
+    rows = []
+    for r in map(dict, conn.execute("select * from news_items where kept=1 and ts >= ? order by ts desc", (since,))):
         r["teams"] = json.loads(r["teams"] or "[]")
         r["players"] = json.loads(r["players"] or "[]")
+        if r["kind"] in PUSH_KINDS and r["players"] and _played_since(conn, r["players"][0], r["published"] or r["ts"]):
+            continue
+        r["tonight"] = int(bool(set(r["teams"]) & slate))
         r["summary"] = spoiler_safe(r["summary"], r["kind"], r["players"])
         if SPOILER.search(r["title"] or ""):
             r["title"] = ""
+        rows.append(r)
+    rows.sort(key=lambda r: (-r["tonight"], -(r["impact"] or 0)))           # stable: newest first within ties
     if team:
         rows = [r for r in rows if team in r["teams"]]
     return rows[:limit]

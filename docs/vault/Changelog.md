@@ -5,6 +5,10 @@ updated: 2026-11-10
 # Changelog
 
 ## 2026-11-10
+- Fix: stale news (the owner: "Luka is playing tonight but dashboard shows he is out"). `tonight` was stored once at ingest
+  and served for 48 h, so Nov 8 "Doncic out vs DET" items still showed "tonight · out" after he played Nov 9 and LAL
+  was off. `news.recent` (dashboard, digest, Telegram pushes all read through it) now works out `tonight` from today's
+  slate at read time and drops availability news about a player who has logged minutes since it was published.
 - Dashboard by priority (the owner): Last night (results) first, then Tonight, then the title race hero, injuries, news,
   model record, standings, title odds over time, then the analysis sections. Scores shown, no spoiler buttons
   (`web.data` sends `spoiler: False`); Telegram still follows `SPOILER_MODE`.
