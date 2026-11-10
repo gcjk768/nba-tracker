@@ -5,6 +5,10 @@ updated: 2026-11-10
 # Changelog
 
 ## 2026-11-10
+- Off/def/net ratings now update game by game (the owner). The dashboard reads the `ratings` table, which only the 15:15
+  daily wrote, so off/def lagged a night (HOU showed 10 games at 8-3). The live sweep now refits and writes today's
+  ratings + Elo whenever a new final lands (`jobs.store_ratings`, shared with the daily, which still rewrites the row
+  at 15:15 with the full night and any tuning). Title odds still update at 15:15 (10k sim).
 - Fix: the Cup table missed the 19 group games already played (Oct 30, Nov 6) (the owner: "Emirates NBA Cup already
   started"). Their tag was wiped when the box score was stored (the bug below), and nothing restored a stored final's
   note. `collect_date` now carries the scoreboard note into `store_game` and fills a missing note on stored finals;

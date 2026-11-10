@@ -352,6 +352,18 @@ def slate_view(ctx, us_date):
 
 # ---------- daily ----------
 
+def store_ratings(ctx, st, d):
+    """Off/def/net and Elo for SGT date d (the dashboard reads these rows)."""
+    with db.tx(ctx.conn):
+        for t in ratings.TEAMS:
+            r = st["ratings"][t]
+            db.upsert(ctx.conn, "ratings", {"date": d, "team": t, "off": r["off"], "def": r["def"], "net": r["net"],
+                                            "prior_net": r["prior_net"], "blend_w": r["blend_w"], "healthy_net": r["healthy_net"],
+                                            "games": r["games"]})
+        for t, v in elo_now(ctx).items():
+            db.upsert(ctx.conn, "elo", {"date": d, "team": t, "elo": v})
+
+
 def daily(ctx, key=None):
     key = key or ctx.now_sgt().date().isoformat()
     return guarded(ctx, "daily", key, _daily)
@@ -407,14 +419,7 @@ def _daily(ctx, key):
         step_done(ctx, "daily", key, "tuned")
     else:
         tune_rep = _meta_json(ctx, f"tune:{key}") or tune_rep
-    with db.tx(conn):
-        for t in ratings.TEAMS:
-            r = st["ratings"][t]
-            db.upsert(conn, "ratings", {"date": today, "team": t, "off": r["off"], "def": r["def"], "net": r["net"],
-                                        "prior_net": r["prior_net"], "blend_w": r["blend_w"], "healthy_net": r["healthy_net"],
-                                        "games": r["games"]})
-        for t, v in elo_now(ctx).items():
-            db.upsert(conn, "elo", {"date": today, "team": t, "elo": v})
+    store_ratings(ctx, st, today)
     prev_sim = latest_sim(ctx, "daily", before=today)
     sim = run_sim(ctx, st, n=10000, seed=int(today.replace("-", "")))
     store_sim(ctx, today, "daily", sim)
@@ -540,6 +545,8 @@ def live(ctx):
     if not res.new_games:
         return {"games": 0}
     bump_state(ctx)                                  # dashboard + bot pick up the new result now
+    today = ctx.now_sgt().date().isoformat()
+    store_ratings(ctx, state(ctx, today), today)     # off/def/net refit now; the 15:15 daily rewrites today's row
     sp = tp.Spoiler(ctx.s.spoiler)
     for gid in res.new_games:
         g = dict(conn.execute("select * from games where game_id=?", (gid,)).fetchone())

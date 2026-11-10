@@ -142,5 +142,8 @@ def test_live_cards_each_final_once_then_daily_still_digests(ctx):
     assert out["games"] == 5 and len(ctx.tg.sent) == 5
     assert all(m.startswith("📊 <b>FINAL</b> · ") for m in ctx.tg.sent)
     assert jobs.live(ctx) == {"games": 0} and len(ctx.tg.sent) == 5          # already stored: no repeat card
+    rows = ctx.conn.execute("select team, games from ratings where date='2026-11-09'").fetchall()
+    assert len(rows) == 30 and sum(r["games"] for r in rows) == 10            # off/def refit with the 5 new finals
+    assert ctx.conn.execute("select count(*) from elo where date='2026-11-09'").fetchone()[0] == 30
     ctx.now = lambda: NOW
     assert jobs.daily(ctx)["games"] == 5                                       # digest still covers every game
