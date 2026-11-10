@@ -1,8 +1,15 @@
 ---
 tags: [active]
-updated: 2026-11-09
+updated: 2026-11-10
 ---
 # Changelog
+
+## 2026-11-10
+- Results game by game (the owner: "update game by game instead of waiting for all at 15:15"). New `live` job every 15 min
+  01:00–14:45 SGT collects last night's US slate; each newly final game is stored, the model state bumped (dashboard and
+  bot show it at once), and one spoiler-wrapped 📊 FINAL card is posted (score, pick right/wrong, factors, top player).
+  ESPN only: a missing box retries next sweep (hoopR lags to ~22:15). The 15:15 daily is unchanged and still digests
+  every game, with AAR, tuning, sim and Claude. Shared row builder `_result_row` in `nba/jobs.py`.
 
 ## 2026-11-09
 - Fix: the Team playbooks section stayed invisible. Its scroll-reveal used `threshold: .08` (8% of the section on screen);

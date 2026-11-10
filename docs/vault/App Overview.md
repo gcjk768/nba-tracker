@@ -44,7 +44,8 @@ asyncio loop; pipelines run one at a time in a worker thread (`nba/scheduler.py`
 - `nba/bot.py` — `/team /compare /whatif /player /status /game /scorecard /ask /plays /film /help`, `ALLOWED_USER_IDS` only.
 
 ## Schedule (SGT)
-15:15 daily · every 30 min 15:30–07:30 injury check · Mon 15:45 weekly · startup: migrate, backfill, catch-up.
+15:15 daily · every 15 min 01:00–14:45 live sweep (`nba/jobs.py` `live`: each game that just went final is stored and gets one
+📊 FINAL card; dashboard updates at once) · every 30 min 15:30–07:30 injury check · Mon 15:45 weekly · startup: migrate, backfill, catch-up.
 `job_runs` + step marks make every run exactly-once (no double digest after a restart).
 
 ## Ship flow

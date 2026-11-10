@@ -501,36 +501,61 @@ def _daily_summary(ctx, st, today, games, briefs, aar, sim, prev_sim, tune_rep):
             "memory": ctx.vault.recent_activity(days=3, cap=2000)}
 
 
+def _result_row(ctx, g, b) -> dict:
+    """One finished game as a results row: score, graded pick, four factors, top player, how the winner won."""
+    p = P.graded(ctx.conn, g["game_id"])
+    right = None if not p else (p["home_wp"] >= 0.5) == (g["home_pts"] > g["away_pts"])
+    f = b.get("factors", {})
+    fh, fa = f.get(g["home"], {}), f.get(g["away"], {})
+    stats = (f"pace {b.get('pace', 0):.0f} · eFG {fa.get('efg', 0):.0%}/{fh.get('efg', 0):.0%} · "
+             f"TOV {b.get('tov', {}).get(g['away'], 0)}/{b.get('tov', {}).get(g['home'], 0)} · "
+             f"REB {g['home']} {b.get('reb_margin', {}).get(g['home'], 0):+d}") if f else ""
+    pick = ""
+    if p:
+        fav = g["home"] if p["home_wp"] >= 0.5 else g["away"]
+        pick = f" · pick {fav} {max(p['home_wp'], 1 - p['home_wp']):.0%}"
+    top = b["top_players"][0] if b["top_players"] else None
+    won = ""
+    try:
+        from . import insights as ins
+        rec = ins.game_recipe(ctx.conn, g["game_id"])
+        w = g["home"] if g["home_pts"] > g["away_pts"] else g["away"]
+        top2 = sorted(((k, v) for k, v in (rec.get(w) or {}).items() if k != "other" and v > 0), key=lambda x: -x[1])[:2]
+        won = f"{w} won on " + ", ".join(f"{k} {v:+.0f}" for k, v in top2) if top2 else ""
+    except Exception as e:
+        log.warning("win recipe failed: %s", e)
+    return {"matchup": b["matchup"], "score": b["score"], "ot": g["ot"], "pick_right": right,
+            "stats_line": stats + pick, "top_line": f"{top['name']} {top['line']}" if top else "", "won_line": won}
+
+
+_NO_HOOPR = type("NoHoopr", (), {"games_for_date": staticmethod(lambda season, d: [])})()   # hoopR lags to ~22:15 SGT
+
+
+def live(ctx):
+    """Every 15 min in US game hours: store games that just went final and post one result card each.
+    collect_date skips games already stored, so each game is carded once; the 15:15 daily still sends the full digest."""
+    conn = ctx.conn
+    last_night = (ctx.now_sgt().date() - timedelta(days=1)).isoformat()    # US date of the games now in progress
+    res = collector.collect_date(conn, ctx.client, last_night, ctx.s.espn_season, _NO_HOOPR)   # ESPN miss: next sweep retries
+    if not res.new_games:
+        return {"games": 0}
+    bump_state(ctx)                                  # dashboard + bot pick up the new result now
+    sp = tp.Spoiler(ctx.s.spoiler)
+    for gid in res.new_games:
+        g = dict(conn.execute("select * from games where game_id=?", (gid,)).fetchone())
+        b = agg.game_brief(conn, gid)
+        r = _result_row(ctx, g, b)
+        ctx.tg.send(tp.results([r], sp, head=tp.title("results", "FINAL", b["matchup"])))
+        ctx.vault.activity("🏁", f"final {b['matchup']}", {True: "pick right", False: "pick wrong", None: "no pick"}[r["pick_right"]])
+    return {"games": len(res.new_games)}
+
+
 def build_digest(ctx, today, games, briefs, aar, tune_rep, st, sim, prev_sim, verdict, tonight, sc_all, warnings, daily_rel):
     sp = tp.Spoiler(ctx.s.spoiler)
     ranked = sorted(zip(games, briefs), key=lambda x: -((x[1].get("excitement") or {}).get("score") or 0))
     watch = [{"label": b["matchup"], "stars": (b.get("excitement") or {}).get("stars", 1),
               "reasons": [r for r in ((b.get("excitement") or {}).get("reasons") or "").split(",") if r]} for _, b in ranked]
-    res = []
-    for g, b in ranked:
-        p = P.graded(ctx.conn, g["game_id"])
-        right = None if not p else (p["home_wp"] >= 0.5) == (g["home_pts"] > g["away_pts"])
-        f = b.get("factors", {})
-        fh, fa = f.get(g["home"], {}), f.get(g["away"], {})
-        stats = (f"pace {b.get('pace', 0):.0f} · eFG {fa.get('efg', 0):.0%}/{fh.get('efg', 0):.0%} · "
-                 f"TOV {b.get('tov', {}).get(g['away'], 0)}/{b.get('tov', {}).get(g['home'], 0)} · "
-                 f"REB {g['home']} {b.get('reb_margin', {}).get(g['home'], 0):+d}") if f else ""
-        pick = ""
-        if p:
-            fav = g["home"] if p["home_wp"] >= 0.5 else g["away"]
-            pick = f" · pick {fav} {max(p['home_wp'], 1 - p['home_wp']):.0%}"
-        top = b["top_players"][0] if b["top_players"] else None
-        won = ""
-        try:
-            from . import insights as ins
-            rec = ins.game_recipe(ctx.conn, g["game_id"])
-            w = g["home"] if g["home_pts"] > g["away_pts"] else g["away"]
-            top2 = sorted(((k, v) for k, v in (rec.get(w) or {}).items() if k != "other" and v > 0), key=lambda x: -x[1])[:2]
-            won = f"{w} won on " + ", ".join(f"{k} {v:+.0f}" for k, v in top2) if top2 else ""
-        except Exception as e:
-            log.warning("win recipe failed: %s", e)
-        res.append({"matchup": b["matchup"], "score": b["score"], "ot": g["ot"], "pick_right": right,
-                    "stats_line": stats + pick, "top_line": f"{top['name']} {top['line']}" if top else "", "won_line": won})
+    res = [_result_row(ctx, g, b) for g, b in ranked]
     impact = [{"label": b["matchup"], "best": b["wpa_best"], "worst": b["wpa_worst"]} for _, b in ranked if b["wpa_best"]]
     since = (ctx.now_sgt() - timedelta(hours=24)).astimezone(UTC).isoformat(timespec="seconds")
     status = [c for c in inj_mod.recent_changes(ctx.conn, since) if c["player_id"] in st["values"]

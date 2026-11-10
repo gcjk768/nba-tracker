@@ -134,3 +134,13 @@ def test_injury_check_alerts_once(ctx):
         assert r1["changes"] >= 1 and r2 == {"changes": 0}
         alerts = [m for m in ctx.tg.sent[n:] if "INJURY ALERT" in m]
         assert len(alerts) <= 1
+
+
+def test_live_cards_each_final_once_then_daily_still_digests(ctx):
+    ctx.now = lambda: datetime(2026, 11, 9, 3, 0, tzinfo=timezone.utc)        # 11:00 SGT, last night's slate ending
+    out = jobs.live(ctx)
+    assert out["games"] == 5 and len(ctx.tg.sent) == 5
+    assert all(m.startswith("📊 <b>FINAL</b> · ") for m in ctx.tg.sent)
+    assert jobs.live(ctx) == {"games": 0} and len(ctx.tg.sent) == 5          # already stored: no repeat card
+    ctx.now = lambda: NOW
+    assert jobs.daily(ctx)["games"] == 5                                       # digest still covers every game

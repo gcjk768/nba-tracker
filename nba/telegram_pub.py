@@ -53,8 +53,8 @@ def worth_watching(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def results(games: list[dict], sp: Spoiler, short=False) -> str:
-    lines = [title("results", "Results")]
+def results(games: list[dict], sp: Spoiler, short=False, head=None) -> str:
+    lines = [head or title("results", "Results")]
     for g in games:
         mark = {True: "🟢", False: "🔴", None: "⚪"}[g.get("pick_right")]
         head = f"{mark} <b>{e(g['matchup'])}</b> " + sp(e(g["score"]) + (f" ({g['ot']}OT)" if g.get("ot") else ""))

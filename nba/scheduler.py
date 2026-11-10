@@ -103,6 +103,7 @@ async def serve(ctx):
     sched.add_job(run(jobs.daily), CronTrigger(hour=DAILY_AT[0], minute=DAILY_AT[1]), id="daily", **common)
     sched.add_job(lambda: loop.run_in_executor(None, _injury_slot, ctx), CronTrigger(hour="15-23,0-7", minute="0,30"),
                   id="injury", **common)
+    sched.add_job(run(jobs.live), CronTrigger(hour="1-14", minute="*/15"), id="live", **common)   # US games 01:00-15:00 SGT
     sched.add_job(run(jobs.film), CronTrigger(hour=21, minute=0), id="film", **common)
     sched.add_job(run(jobs.weekly), CronTrigger(day_of_week="mon", hour=WEEKLY_AT[0], minute=WEEKLY_AT[1]), id="weekly", **common)
     sched.add_job(heartbeat, "interval", seconds=60, args=[hb], id="heartbeat", max_instances=1, coalesce=True)
