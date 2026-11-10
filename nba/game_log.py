@@ -31,6 +31,49 @@ def _est(rows, keys, min_att=4):
             "lg": round(sum(r["lg_success"] * r["att"] for r in used) / att, 3), "att": att}
 
 
+def _scheme(label, source, def_rows, **kw):
+    ctrs, why = kb.COUNTERS.get(label, ([], ""))
+    return {"label": label, "source": source, "group": kb.DEF_GROUP.get(label, "other"), "desc": kb.describe(label)["desc"],
+            "counters": ctrs[:3], "why": why, "estimate": _est(def_rows, kb.COVERAGE_GIVES.get(label, [])), **kw}
+
+
+def _named_sets(reported, season, off_rows, top=8):
+    """Named offensive sets: reported for this game first, then the team's season playbook (reported in season
+    breakdowns), each with this game's estimated success from the plays the set usually ends in."""
+    rows = {x["label"]: {"label": x["label"], "source": "this game", "summary": x["summary"], "url": x["url"], "ato": bool(x.get("ato"))}
+            for x in reported if x["kind"] != "coverage"}
+    for k, x in season.items():
+        if x["kind"] != "coverage" and k not in rows:
+            rows[k] = {"label": k, "source": "season", "summary": x["summary"], "url": x["url"], "ato": False, "mentions": x["n"]}
+    for r in rows.values():
+        r["estimate"] = _est(off_rows, kb.SET_TO_PLAYS.get(r["label"], []))
+    return list(rows.values())[:top]
+
+
+GROUPS = ("base", "pick-and-roll", "zone", "junk", "pressure", "help", "other")
+
+
+def _named_defense(reported, season, labels, def_rows):
+    """Named defensive schemes (man-to-man, drop, switch, 2-3 zone...): base man-to-man, then coverages reported for this
+    game, then the team's season-reported coverages, then drop inferred from this game's shots. Help leans (pack the
+    paint, run shooters off, turnover-forcing, rim protector) are tendencies, not schemes."""
+    rows = {"man-to-man": _scheme("man-to-man", "base", def_rows)}
+    for x in reported:
+        if x["kind"] == "coverage":
+            rows[x["label"]] = _scheme(x["label"], "this game", def_rows, summary=x["summary"], url=x["url"])
+    for k, x in season.items():
+        if x["kind"] == "coverage" and k not in rows:
+            rows[k] = _scheme(k, "season", def_rows, summary=x["summary"], url=x["url"], mentions=x["n"])
+    tend = []
+    for l in labels:
+        k = kb.lean_key(l["label"]) if l["side"] == "defense" else None
+        if k == "drop" and (k not in rows or rows[k]["source"] == "season"):    # this game's shots back it up
+            rows[k] = _scheme(k, "inferred", def_rows, evidence=l["evidence"], confidence=l["confidence"])
+        elif k and k != "drop":
+            tend.append(_scheme(k, "inferred", def_rows, evidence=l["evidence"], confidence=l["confidence"]))
+    return sorted(rows.values(), key=lambda r: GROUPS.index(r["group"]) if r["group"] in GROUPS else 9), tend
+
+
 def build(conn, season, teams=FOCUS) -> dict:
     S = schemes.shots(conn, season)
     lg = plays.league(S)
@@ -43,7 +86,10 @@ def build(conn, season, teams=FOCUS) -> dict:
         "select b.* from team_box b join games g on g.game_id=b.game_id where g.season=?", (season,))}
     pace_pct, _ = _pcts({k: {"poss": b["poss"] or 0} for k, b in box.items()})
     tov_pct, _ = _pcts({k: {"tov": (b["tov"] or 0) / max(1, b["poss"] or 1)} for k, b in box.items()})   # key = team that turned it over
-    films = defaultdict(list)
+    films, season_named = defaultdict(list), defaultdict(dict)
+    for r in conn.execute("""select team, kind, label, count(*) n, max(url) url, max(summary) summary from film_items
+                             group by team, kind, label order by n desc"""):
+        season_named[r["team"]][r["label"]] = dict(r)
     for r in conn.execute("select * from film_items where game_id != '' order by id"):
         films[(r["game_id"], r["team"])].append(dict(r))
     out = {}
@@ -66,22 +112,8 @@ def build(conn, season, teams=FOCUS) -> dict:
                                    pace_pct.get((gid, t), {}).get("poss", 50), tov_pct.get((gid, o), {}).get("tov", 50),
                                    top_share, blk_name, blk_n if blk_n >= 4 else 0)   # one game: 4+ blocks, not 1.6 a night
             reported = films.get((gid, t), [])
-            schemes_ = {}
-            for l in labels:
-                k = kb.lean_key(l["label"]) if l["side"] == "defense" else None
-                if k:
-                    schemes_[k] = {"label": k, "source": "inferred", "confidence": l["confidence"], "evidence": l["evidence"]}
-            for x in reported:
-                if x["kind"] == "coverage":
-                    schemes_[x["label"]] = {"label": x["label"], "source": "reported", "summary": x["summary"], "url": x["url"]}
-            if not schemes_:
-                schemes_["man-to-man"] = {"label": "man-to-man", "source": "base"}
-            for k, r in schemes_.items():
-                ctrs, why = kb.COUNTERS.get(k, ([], ""))
-                r.update(group=kb.DEF_GROUP.get(k, "other"), desc=kb.describe(k)["desc"], counters=ctrs[:3], why=why,
-                         estimate=_est(def_rows, kb.COVERAGE_GIVES.get(k, [])))
-            sets = [{"label": x["label"], "kind": x["kind"], "summary": x["summary"], "url": x["url"], "ato": bool(x.get("ato")),
-                     "estimate": _est(off_rows, kb.SET_TO_PLAYS.get(x["label"], []))} for x in reported if x["kind"] != "coverage"]
+            sets = _named_sets(reported, season_named[t], off_rows)
+            defense, tendencies = _named_defense(reported, season_named[t], labels, def_rows)
             mo, md = mix[(gid, t)], mix[(gid, o)]
             pts, opts = (g["home_pts"], g["away_pts"]) if home else (g["away_pts"], g["home_pts"])
             games.append({
@@ -90,13 +122,15 @@ def build(conn, season, teams=FOCUS) -> dict:
                 "offense": {"plays": off_rows[:4], "styles": [l for l in labels if l["side"] == "offense"], "sets": sets,
                             "pps": round(mo["pps"], 3), "three_rate": round(mo["three_rate"], 3), "rim_rate": round(mo["rim_rate"], 3),
                             "assisted": round(mo["assisted"], 3), "transition": round(mo["transition"], 3)},
-                "defense": {"schemes": list(schemes_.values()), "allowed": def_rows[:3], "opp_pps": round(md["pps"], 3),
+                "defense": {"schemes": defense, "tendencies": tendencies, "allowed": def_rows[:3], "opp_pps": round(md["pps"], 3),
                             "opp_rim": round(md["rim_rate"], 3), "opp_three": round(md["three_rate"], 3),
                             "opp_mid": round(md["mid_rate"], 3), "blocks": sum(blk.values()), "anchor": blk_name if blk_n >= 3 else None,
                             "forced_tov": (box.get((gid, o)) or {}).get("tov")},
             })
         out[t] = {"games": games, "record": f"{sum(x['result'] == 'W' for x in games)}-{sum(x['result'] == 'L' for x in games)}",
-                  "def_counts": Counter(s["label"] for x in games for s in x["defense"]["schemes"]).most_common(),
+                  "def_counts": Counter(s["label"] for x in games for s in x["defense"]["schemes"] if s["source"] != "season").most_common(),
+                  "set_counts": Counter(s["label"] for x in games for s in x["offense"]["sets"] if s["source"] == "this game").most_common(),
+                  "tendency_counts": Counter(s["label"] for x in games for s in x["defense"]["tendencies"]).most_common(),
                   "off_counts": Counter(s["label"].split(" (")[0] for x in games for s in x["offense"]["styles"]).most_common(),
                   "play_counts": Counter(x["offense"]["plays"][0]["play"] for x in games if x["offense"]["plays"]).most_common(3)}
     return out

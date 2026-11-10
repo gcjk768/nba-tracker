@@ -5,6 +5,15 @@ updated: 2026-11-10
 # Changelog
 
 ## 2026-11-10
+- Dashboard split into pages (the owner: "side bar or navbar, split into different pages"). Navbar in the sticky top bar:
+  Today (last night, tonight, injuries, news) · Game by game · Playbooks (+ what beats what) · Styles (+ what decides
+  games) · Title race (hero, standings, Cup, odds over time) · Model. Hash routing (`#games`), so links and the back
+  button work; every `<section>` carries `data-page` (test enforces it, and that the page script parses).
+- Game by game now leads with named plays (the owner: "offense play is horns, triangle etc; defense is man to man, 2-3,
+  3-2"). Offense: named sets run this game (orange, from that game's write-up) then the season playbook (grey), each
+  with an est. success from this game's shots. Defense: man-to-man base, then pick-and-roll coverage (drop, switch,
+  hedge...) played this game / season / inferred drop, zone line ("none reported" unless named), with help leans
+  (pack the paint, turnover-forcing...) moved to "tendencies". Shot types stay below as "how possessions ended".
 - Game by game: plays and defense for LAL, SAS, PHI, OKC (the owner: "what plays and defense scheme they run for every
   match, past match till current"). New `nba/game_log.py` (`FOCUS`): every final this season, newest first, with the
   top plays run (shots, success vs league), offense leans, the defensive scheme played (inferred per game by running

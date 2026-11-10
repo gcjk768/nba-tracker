@@ -17,9 +17,10 @@ def test_game_log_measures_each_game_and_attaches_only_that_games_reports(conn):
     g = G["games"][0]
     assert len(G["games"]) == 1 and g["result"] in "WL" and g["offense"]["plays"] and g["defense"]["allowed"]
     labels = {x["label"]: x["source"] for x in g["defense"]["schemes"]}
-    assert labels["2-3 zone"] == "reported" and "drop" not in labels or labels["drop"] == "inferred"   # season piece stays off the game
-    assert [x["label"] for x in g["offense"]["sets"]] == ["horns"]
-    assert all(x["counters"] for x in g["defense"]["schemes"] if x["label"] != "rim protector")
+    assert list(labels)[0] == "man-to-man" and labels["2-3 zone"] == "this game"
+    assert labels["drop"] in ("season", "inferred")                # season piece is labelled season, never "this game"
+    assert [(x["label"], x["source"]) for x in g["offense"]["sets"]] == [("horns", "this game")]
+    assert all(x["counters"] for x in g["defense"]["schemes"]) and G["def_counts"][0] == ("man-to-man", 1)
 
 
 class FakeWeb:

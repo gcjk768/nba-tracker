@@ -41,7 +41,7 @@ asyncio loop; pipelines run one at a time in a worker thread (`nba/scheduler.py`
 - `nba/playbook_kb.py` — named sets / defenses (what each is, `COUNTERS` = what beats it, `SET_TO_PLAYS` / `COVERAGE_GIVES` for the estimated success, `DEF_GROUP` = base / pick-and-roll / help / zone / junk / pressure); `nba/social_intel.py` `season_articles` + `season_videos` find this season's breakdowns per team; `web.named_sets` / `web.defense_schemes` feed the playbook cards, drawer and `/plays`.
 - `nba/game_log.py` — focus teams (LAL, SA, PHI, OKC) game by game: plays run, defense scheme played (inferred per game,
   or reported by a write-up of that game via `social_intel.game_articles`), counters, plays allowed; `web.game_log`.
-- `nba/web.py` + `nba/dashboard.html` — animated dashboard on NAS port 8795 (team drawer at `/team/<CODE>.json`) (title race replay, odds over time, power
+- `nba/web.py` + `nba/dashboard.html` — animated dashboard in pages (navbar, `#today` `#games` `#playbooks` `#teams` `#race` `#model`) on NAS port 8795 (team drawer at `/team/<CODE>.json`) (title race replay, odds over time, power
   rankings, Emirates NBA Cup groups (`web.cup_table`), tonight vs market, last night behind a reveal, calibration, AAR causes, model changes); `/data.json` too.
 - `nba/bot.py` — `/team /compare /whatif /player /status /game /scorecard /ask /plays /film /help`, `ALLOWED_USER_IDS` only.
 

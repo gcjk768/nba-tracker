@@ -62,3 +62,18 @@ def test_cup_table_ranks_groups_and_flags_wild_cards(conn):
     assert a[0]["flag"] == "leads group" and (a[0]["w"], a[0]["l"]) == (2, 0) and a[0]["pd"] == 11 and a[0]["left"] == 2
     assert a[1]["flag"] == "wild card"                                  # CHI 1-0 beats every other East runner-up
     assert cup["nights"] == ["2026-11-13"]
+
+
+def test_dashboard_script_parses_and_every_section_has_a_page():
+    # one stray quote in a JS string blanks the whole page (2026-11-10: a subtitle quoted "how possessions ended")
+    import shutil
+    import subprocess
+    from pathlib import Path
+    import pytest
+    html = Path(__file__).resolve().parent.parent.joinpath("nba", "dashboard.html").read_text(encoding="utf-8")
+    assert html.count("<section") == html.count("<section data-page=")
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
+    js = html.split("<script>")[-1].split("</script>")[0].replace("/*__DATA__*/null", "{}")
+    r = subprocess.run(["node", "-e", "new Function(require('fs').readFileSync(0, 'utf8'))"], input=js, capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stderr[-400:]
