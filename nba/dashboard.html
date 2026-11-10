@@ -365,6 +365,16 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
 </div></header>
 
 <main class="wrap">
+  <section class="block reveal" id="s-last">
+    <div class="sh"><div><h2>Last night</h2><p id="lastSub"></p></div><button id="revealAll">Show all scores</button></div>
+    <div class="nights" id="nights"></div>
+  </section>
+
+  <section class="block reveal" id="s-tonight">
+    <div class="sh"><div><h2>Tonight</h2><p id="tonightSub"></p></div></div>
+    <div class="games" id="games"></div>
+  </section>
+
   <section class="hero">
     <div>
       <div class="fav" id="fav"></div>
@@ -380,9 +390,9 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
     </div>
   </section>
 
-  <section class="block reveal" id="s-tonight">
-    <div class="sh"><div><h2>Tonight</h2><p id="tonightSub"></p></div></div>
-    <div class="games" id="games"></div>
+  <section class="block reveal" id="s-status">
+    <div class="sh"><div><h2>Who's not at full strength</h2><p>Rotation players on the injury report. Tonight's teams first. "Worth" is how many points of margin the model takes off when he sits.</p></div></div>
+    <div class="status" id="status"></div>
   </section>
 
   <section class="block reveal" id="s-news">
@@ -391,14 +401,15 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
     <div class="newsgrid" id="newsList"></div>
   </section>
 
-  <section class="block reveal" id="s-status">
-    <div class="sh"><div><h2>Who's not at full strength</h2><p>Rotation players on the injury report. Tonight's teams first. "Worth" is how many points of margin the model takes off when he sits.</p></div></div>
-    <div class="status" id="status"></div>
+  <section class="block reveal">
+    <div class="sh"><div><h2>How the model is doing</h2><p>Every pick is frozen before tip-off and graded after. Misses get an After Action Review.</p></div></div>
+    <div class="strip" id="strip"></div>
   </section>
 
-  <section class="block reveal" id="s-last">
-    <div class="sh"><div><h2>Last night, worth watching</h2><p id="lastSub"></p></div><button id="revealAll">Show all scores</button></div>
-    <div class="nights" id="nights"></div>
+  <section class="block reveal">
+    <div class="sh"><div><h2>Standings by conference</h2><p>Seeds 1 to 6 go straight to the playoffs, 7 to 10 play in, 11 to 15 are in the lottery. Net rating is points per 100 possessions with a healthy rotation; odds from 10,000 simulated seasons.</p></div></div>
+    <div class="confs" id="tiers"></div>
+    <details><summary>Full table</summary><div style="overflow-x:auto"><table id="full"></table></div></details>
   </section>
 
   <section class="block reveal">
@@ -434,17 +445,6 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
   <section class="block reveal" id="s-wbw">
     <div class="sh"><div><h2>What beats what</h2><p>Each defense and the plays that usually break it (coaching principle), checked against this season: which shot types actually score best against the teams that play it. Tap any play to see what it is, with a video.</p></div></div>
     <div class="wbgrid" id="wbw"></div>
-  </section>
-
-  <section class="block reveal">
-    <div class="sh"><div><h2>Standings by conference</h2><p>Seeds 1 to 6 go straight to the playoffs, 7 to 10 play in, 11 to 15 are in the lottery. Net rating is points per 100 possessions with a healthy rotation; odds from 10,000 simulated seasons.</p></div></div>
-    <div class="confs" id="tiers"></div>
-    <details><summary>Full table</summary><div style="overflow-x:auto"><table id="full"></table></div></details>
-  </section>
-
-  <section class="block reveal">
-    <div class="sh"><div><h2>How the model is doing</h2><p>Every pick is frozen before tip-off and graded after. Misses get an After Action Review.</p></div></div>
-    <div class="strip" id="strip"></div>
   </section>
 
   <footer id="foot"></footer>
@@ -598,7 +598,7 @@ function ctxLine(p) {
 (function last() {
   const L = D.last_night, box = $("nights");
   if (!L.games.length) { $("lastSub").textContent = "No games yet."; $("revealAll").hidden = true; return; }
-  $("lastSub").textContent = `US date ${L.date}. Ranked by how close and swingy each game was. Scores stay hidden until you ask.`;
+  $("lastSub").textContent = `US date ${L.date}. Ranked by how close and swingy each game was. New finals appear every 15 min while games are on; reload to see them.`;
   box.innerHTML = L.games.map((g, k) => {
     const st = Array.from({length: 5}, (_, j) => `<i class="${j < g.stars ? "on" : ""}"></i>`).join("");
     const pick = g.pick_right == null ? "" : g.pick_right ? `<span class="up">Pick right (${esc(g.pick)} ${pct(g.pick_wp)})</span>` : `<span class="down">Pick missed (${esc(g.pick)} ${pct(g.pick_wp)})</span>`;

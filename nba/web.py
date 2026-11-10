@@ -106,7 +106,7 @@ def data(ctx) -> dict:
     return {
         "teams": teams_meta,
         "season": ctx.s.season, "today": today, "updated": c.execute(
-            "select max(finished) from job_runs where status='done'").fetchone()[0], "spoiler": ctx.s.spoiler,
+            "select max(finished) from job_runs where status='done'").fetchone()[0], "spoiler": False,   # dashboard shows scores (the owner 2026-11-10); Telegram still follows SPOILER_MODE
         "title": {"dates": dates, "teams": {t: [round(series[t].get(d, 0), 4) for d in dates] for t in ever_top},
                   "market": {t: round(v, 4) for t, v in mkt.items()}, "latest": latest},
         "tonight_ctx": {g["game_id"]: game_context(ctx, g) for g in jobs.slate_view(ctx, today)},

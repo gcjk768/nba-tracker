@@ -77,7 +77,9 @@ def startup(ctx):
         db.migrate(ctx.conn)
         try:
             collector.refresh_schedule(ctx.conn, ctx.client, ctx.s.espn_season)
-            r = collector.backfill(ctx.conn, ctx.client, ctx.s.espn_season, ctx.now_sgt().date().isoformat())
+            # stop before last night's slate: the live sweep (or catch-up daily) owns it, so a restart never eats its FINAL cards
+            last_night = (ctx.now_sgt().date() - timedelta(days=1)).isoformat()
+            r = collector.backfill(ctx.conn, ctx.client, ctx.s.espn_season, last_night)
             if r.new_games:
                 ctx.vault.activity("📥", "backfill", f"{len(r.new_games)} games")
                 jobs.bump_state(ctx)

@@ -5,6 +5,11 @@ updated: 2026-11-10
 # Changelog
 
 ## 2026-11-10
+- Dashboard by priority (the owner): Last night (results) first, then Tonight, then the title race hero, injuries, news,
+  model record, standings, title odds over time, then the analysis sections. Scores shown, no spoiler buttons
+  (`web.data` sends `spoiler: False`); Telegram still follows `SPOILER_MODE`.
+- Fix: a restart during game hours backfilled last night's finished games, so they never got a FINAL card. Startup
+  backfill now stops before last night's slate (`nba/scheduler.py` `startup`); the live sweep or catch-up daily owns it.
 - Results game by game (the owner: "update game by game instead of waiting for all at 15:15"). New `live` job every 15 min
   01:00–14:45 SGT collects last night's US slate; each newly final game is stored, the model state bumped (dashboard and
   bot show it at once), and one spoiler-wrapped 📊 FINAL card is posted (score, pick right/wrong, factors, top player).
