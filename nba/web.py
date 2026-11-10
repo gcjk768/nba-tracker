@@ -115,6 +115,7 @@ def data(ctx) -> dict:
         "rankings": rankings, "status": status[:40],
         "styles": styles,
         "playbooks": playbooks(ctx, styles),
+        "game_log": game_log(ctx),
         "kb": kb_payload(ctx),
         "decides": decides(ctx),
         "ato_league": {k: v for k, v in ato_profiles(ctx).get("_league", {}).items()},
@@ -189,6 +190,15 @@ def plays_all(ctx) -> dict:
         out[t] = {"offense": off, "defense": de, "ato": plays.ato_plays(poss, t, lg)}
     _CACHE[k] = out
     return out
+
+
+def game_log(ctx) -> dict:
+    """Focus teams, game by game: plays run, defense played, reported sets per game. Cached like the other views."""
+    from . import game_log as gl
+    k = ("game_log", _key(ctx.conn), ctx.conn.execute("select count(*) from film_items").fetchone()[0])
+    if k not in _CACHE:
+        _CACHE[k] = gl.build(ctx.conn, ctx.s.espn_season)
+    return _CACHE[k]
 
 
 def named_sets(ctx, team: str) -> list[dict]:

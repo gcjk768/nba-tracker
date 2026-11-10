@@ -277,6 +277,50 @@ def season_articles(conn, today: str, model: str, reach=None, claude_runner=None
     return {"teams": pick, "added": added, "stop": stop}
 
 
+NOT_ARTICLE = ("youtube.com", "youtu.be", "reddit.com", "x.com", "twitter.com", "basketball-reference.com", "48index.com")
+
+
+def game_articles(conn, today: str, model: str, teams, season: int, reach=None, claude_runner=None, per_night=5) -> dict:
+    """Write-ups of each finished game of the focus teams (Exa search + Jina read via Agent Reach): named sets and
+    coverages tied to that game. Newest games first, `per_night` a night (<= 2 reads each, inside the read budget);
+    each (game, team) is searched once, marked `art:<game_id>:<team>` in film_games."""
+    reach = reach or Reach()
+    done = {r[0] for r in conn.execute("select game_id from film_games where game_id like 'art:%'")}
+    todo = sorted(((dict(g), t) for t in teams for g in conn.execute(
+        "select * from games where season=? and status='final' and source is not null and date < ? and ? in (home, away)",
+        (season, today, t)) if f"art:{g['game_id']}:{t}" not in done), key=lambda x: x[0]["date"], reverse=True)
+    added, stop = [], None
+    try:
+        for g, t in todo[:per_night]:
+            opp, gd = g["away"] if t == g["home"] else g["home"], date.fromisoformat(g["date"])
+            items = reach("web_search", f"{espn.NAMES[t]} vs {espn.NAMES[opp]} {gd:%B} {gd.day}, {gd.year} film breakdown sets defense",
+                          "--limit", "6") or []
+            used = 0
+            for it in items:
+                url, title = it.get("url") or "", it.get("title") or ""
+                pub = _date(it.get("published_at"))
+                if (used >= 2 or not url or any(x in url for x in NOT_ARTICLE) or not pub or not gd <= pub <= gd + timedelta(days=4)
+                        or not _mentions(title, t) or conn.execute("select 1 from film_videos where url=?", (url,)).fetchone()):
+                    continue
+                got = reach("web_read", url) or []
+                text = (got[0].get("text") if got else "") or ""
+                used += 1
+                if len(text.split()) < 200:
+                    _video(conn, url, g["game_id"], "too short")
+                    continue
+                found = extract(text, g, url, title, model, claude_runner)
+                with db.tx(conn):
+                    for f in found:
+                        _store(conn, g["game_id"], g["date"], f, url, _host(url))
+                _video(conn, url, g["game_id"], f"done: {len(found)} labels (article)")
+                added += [{**f, "game_id": g["game_id"]} for f in found]
+            with db.LOCK:
+                conn.execute("insert or replace into film_games(game_id, status, checked) values (?, 'done', ?)", (f"art:{g['game_id']}:{t}", today))
+    except Stop as e:
+        stop = str(e)
+    return {"games": min(per_night, len(todo)), "left": max(0, len(todo) - per_night), "added": added, "stop": stop}
+
+
 def _host(url):
     m = re.match(r"https?://(?:www\.)?([^/]+)", url)
     return m.group(1) if m else url

@@ -5,6 +5,17 @@ updated: 2026-11-10
 # Changelog
 
 ## 2026-11-10
+- Game by game: plays and defense for LAL, SAS, PHI, OKC (the owner: "what plays and defense scheme they run for every
+  match, past match till current"). New `nba/game_log.py` (`FOCUS`): every final this season, newest first, with the
+  top plays run (shots, success vs league), offense leans, the defensive scheme played (inferred per game by running
+  `schemes.infer` on that game's numbers ranked against every team-game, mapped to drop / pack the paint / run
+  shooters off / turnover-forcing / rim protector, else man-to-man), what beats it, opponents' make rate on the shots
+  that scheme gives up, and plays allowed. Named sets and coverages per game only when a write-up of that game names
+  them: new `social_intel.game_articles` (Exa search + Jina read, <= 5 games a night, each game once, marked
+  `art:<game_id>:<team>` in `film_games`) runs in the 21:00 film job; `prompts/film.md` now covers articles too.
+  Dashboard section after Team playbooks with team tabs (`web.game_log`).
+- Fix: `schemes._flat` never flattened `zone_fg`, so the "Rim protector anchored" label could never fire (SAS with
+  Wembanyama at 4.3 blocks a game had none). Now included.
 - Off/def/net ratings now update game by game (the owner). The dashboard reads the `ratings` table, which only the 15:15
   daily wrote, so off/def lagged a night (HOU showed 10 games at 8-3). The live sweep now refits and writes today's
   ratings + Elo whenever a new final lands (`jobs.store_ratings`, shared with the daily, which still rewrites the row

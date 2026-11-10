@@ -121,7 +121,7 @@ def _mix(rows):
 
 def _flat(m: dict) -> dict:
     f = {k: v for k, v in m.items() if isinstance(v, float)}
-    for grp in ("kind", "zone"):
+    for grp in ("kind", "zone", "zone_fg"):     # zone_fg feeds the rim-protector rule (was missing: it never fired)
         for k, v in m[grp].items():
             f[f"{grp}:{k}"] = v
     return f

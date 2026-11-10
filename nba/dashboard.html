@@ -183,6 +183,13 @@ td.r, th.r { text-align: right; }
 .pr.t5 { background: color-mix(in srgb, var(--good) 22%, transparent); border-color: transparent; color: var(--ink); }
 .pr.b5 { background: color-mix(in srgb, var(--bad) 20%, transparent); border-color: transparent; color: var(--ink); }
 .pbs { border-top: 1px solid var(--line); padding-top: 10px; }
+.glgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 14px; margin-top: 14px; }
+@media (max-width: 560px) { .glgrid { grid-template-columns: 1fr; } }
+.gl .gh { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.gl .gh .res { font-weight: 700; } .gl .gh .res.W { color: var(--good); } .gl .gh .res.L { color: var(--bad); }
+.gl .two { gap: 14px; }
+.glsum { display: grid; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.glsum .chips { margin-top: 0; }
 .pbs h4 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
 .mx { display: grid; grid-template-columns: 128px 1fr 44px 46px; gap: 8px; align-items: center; font-size: 13px; margin: 3px 0; }
 .mx .tr { height: 8px; position: relative; }
@@ -445,6 +452,13 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
         <label class="muted" style="font-size:13px">Sort <select id="pbSort" class="sel"><option value="net">Net rank</option><option value="off">Offense rank</option><option value="def">Defense rank</option><option value="ato">ATO rank</option></select></label>
         <div class="seg" id="pbSeg" role="group" aria-label="Conference"><button data-cf="All" aria-pressed="true">All</button><button data-cf="East" aria-pressed="false">East</button><button data-cf="West" aria-pressed="false">West</button></div></div></div>
     <div class="pbgrid" id="pbGrid"></div>
+  </section>
+
+  <section class="block reveal" id="s-gl">
+    <div class="sh"><div><h2>Game by game: plays and defense</h2><p id="glSub"></p></div>
+      <div class="seg" id="glSeg" role="group" aria-label="Team"></div></div>
+    <div class="glsum" id="glSum"></div>
+    <div class="glgrid" id="glList"></div>
   </section>
 
   <section class="block reveal" id="s-wbw">
@@ -753,6 +767,51 @@ function leanKey(label) {
     const key = e.target.value, val = p => key === "ato" ? (p.ato && !p.ato.small_sample ? p.ato.rank : 99) : p[key + "_rank"];
     PB.slice().sort((a, b) => val(a) - val(b)).forEach(p => box.appendChild(box.querySelector(`.pb header[data-open="${p.team}"]`).parentElement));
   };
+})();
+
+// ---------- game by game (focus teams): plays run and defense played, every final this season ----------
+(function gameLog() {
+  const G = D.game_log || {}, teams = Object.keys(G);
+  if (!teams.length) { $("s-gl").hidden = true; return; }
+  $("glSub").textContent = "Every game this season, newest first. Plays and defensive leans are measured from that game's play-by-play and ranked against every team-game this season (inferred). Named sets and coverages appear only when a breakdown or recap of that game named them (reported).";
+  const cnt = arr => arr.map(([k, n]) => `<span class="sc" title="${n} game${n > 1 ? "s" : ""}">${esc(k)} ×${n}</span>`).join("");
+  const est = e => e ? `<span class="${e.success <= e.lg ? "up" : "down"}" title="opponents' make rate on the shots this scheme usually gives up, ${e.att} shots this game, league ${pct(e.lg)}">opp ${pct(e.success)}*</span>` : "";
+  const style = l => `<span class="sc" title="Inferred, confidence ${Math.round(100 * l.confidence)}%: ${esc(l.evidence)}">${esc(l.label.split(" (")[0])}</span>`;
+  const card = g => {
+    const o = g.offense, d = g.defense;
+    return `<article class="pb gl">
+      <div class="gh"><span class="muted mono">${esc(g.date)}</span><span data-open="${esc(g.opp)}" style="display:flex;gap:6px;align-items:center">${g.home ? "vs" : "@"} ${logo(g.opp)} <b>${esc(NAME(g.opp))}</b></span>
+        <span class="res ${g.result}">${g.result} ${g.pts}-${g.opp_pts}${g.ot ? " OT" : ""}</span>${g.cup ? `<span class="sc">NBA Cup</span>` : ""}</div>
+      <div class="two">
+        <div class="pbs"><h4>Offense: plays they ran</h4>
+          <table class="pt"><thead><tr><th>Play</th><th class="r">Shots</th><th class="r">Success</th></tr></thead><tbody>
+          ${o.plays.map(r => `<tr><td><button class="sc plink3" data-play="${esc(r.explain)}">${esc(r.play)}</button></td><td class="r num">${r.att}</td>
+            <td class="r num ${r.success >= r.lg_success ? "up" : "down"}" title="league ${pct(r.lg_success, 1)}">${pct(r.success)}</td></tr>`).join("")}</tbody></table>
+          <div class="meta">3PA ${pct(o.three_rate)} · rim ${pct(o.rim_rate)} · assisted ${pct(o.assisted)} · transition ${pct(o.transition)} · ${o.pps.toFixed(2)} pts/shot</div>
+          <div class="chips">${o.styles.map(style).join("") || `<span class="muted">balanced, no clear lean</span>`}</div>
+          ${o.sets.length ? `<div class="chips">${o.sets.map(x => `<button class="sc rep" data-play="${esc(x.label)}" title="${esc(x.summary)}">${esc(x.label)}${x.ato ? " (ATO)" : ""}</button> <a class="muted" href="${esc(x.url)}" target="_blank" rel="noopener">src</a>${x.estimate ? ` <span class="muted" title="estimated from the plays it usually ends in, ${x.estimate.att} shots">${pct(x.estimate.success)}*</span>` : ""}`).join(" ")}</div>` : ""}</div>
+        <div class="pbs"><h4>Defense: scheme they played</h4>
+          <table class="pt"><tbody>${d.schemes.map(x => `<tr><td><button class="sc ${x.source === "reported" ? "rep" : ""}" data-play="${esc(x.label)}" title="${esc(x.evidence || x.summary || x.desc || "")}">${esc(x.label)}</button>
+            <span class="grp">${esc(x.group)} · ${x.source === "reported" ? `reported <a href="${esc(x.url)}" target="_blank" rel="noopener">src</a>` : x.source}</span></td>
+            <td class="r num">${est(x.estimate)}</td>
+            <td><div class="ctr" title="${esc(x.why)}">${x.counters.map(c => `<button class="sc" data-play="${esc(c)}">${esc(c)}</button>`).join("")}</div></td></tr>`).join("")}</tbody></table>
+          <div class="meta">Opponent shots: rim ${pct(d.opp_rim)} · 3PA ${pct(d.opp_three)} · mid ${pct(d.opp_mid)} · ${d.opp_pps.toFixed(2)} pts/shot · forced ${d.forced_tov ?? "n/a"} TOV · ${d.blocks} blocks${d.anchor ? ` (${esc(d.anchor)})` : ""}</div>
+          ${d.allowed.length ? `<div class="meta">They ran most against them: ${d.allowed.map(r => `<b>${esc(r.play)}</b> ${r.att} (${pct(r.success)} in)`).join(" · ")}</div>` : ""}</div>
+      </div></article>`;
+  };
+  const show = t => {
+    document.querySelectorAll("#glSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.t === t));
+    const T = G[t];
+    $("glSum").innerHTML = `<div><b>${esc(NAME(t))}</b> ${esc(T.record)} in ${T.games.length} games tracked</div>
+      <div class="chips"><span class="muted">Defense across games:</span> ${cnt(T.def_counts)}</div>
+      <div class="chips"><span class="muted">Offense leans:</span> ${cnt(T.off_counts) || `<span class="muted">none</span>`}</div>
+      <div class="chips"><span class="muted">Most-used play (games it led):</span> ${cnt(T.play_counts)}</div>
+      <div class="meta muted" style="font-size:12px">* Opponents' make rate on the shots that scheme usually gives up (green = better than league). An estimate: public data never logs the defense on each possession.</div>`;
+    $("glList").innerHTML = T.games.map(card).join("") || `<div class="muted">No finished games yet.</div>`;
+  };
+  $("glSeg").innerHTML = teams.map(t => `<button data-t="${esc(t)}" aria-pressed="false">${esc(t === "SA" ? "SAS" : t)}</button>`).join("");
+  document.querySelectorAll("#glSeg button").forEach(b => b.onclick = () => show(b.dataset.t));
+  show(teams[0]);
 })();
 
 // ---------- what beats what + play explainer panel ----------

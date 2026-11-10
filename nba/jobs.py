@@ -1055,11 +1055,13 @@ def _film(ctx, key):
                            claude_runner=ctx.runner)
     arts = social_intel.season_articles(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach_web"), claude_runner=ctx.runner)
     social_intel.season_videos(ctx.conn, key, ctx.s.model_ask, claude_runner=ctx.runner, teams=arts["teams"])
+    from . import game_log
+    garts = social_intel.game_articles(ctx.conn, key, ctx.s.model_ask, game_log.FOCUS, ctx.s.espn_season, claude_runner=ctx.runner)
     from . import playbook_kb as kb
     want = [r[0] for r in ctx.conn.execute("select label, count(*) n from film_items group by label order by n desc")]
     want += [x for k, (ctrs, _) in kb.COUNTERS.items() for x in [k] + ctrs]
     vids = social_intel.play_videos(ctx.conn, list(dict.fromkeys(want)), limit=10)
-    added = res["added"]
+    added = res["added"] + garts["added"]
     by_game = {}
     for it in added:
         by_game.setdefault(it["game_id"], []).append(it)
@@ -1079,11 +1081,13 @@ def _film(ctx, key):
         for c in clash[:6]:
             lines.append(f"🎬 <b>{tp.e(c['team'])}</b> played <b>{tp.e(c['label'])}</b> <i>(reported)</i>, "
                          f"but the play-by-play read was <i>{tp.e(c['inferred'])}</i>")
-            lines.append(f"   {tp.e(c['summary'])} · <a href=\"{tp.e(c['url'])}\">video</a>")
+            lines.append(f"   {tp.e(c['summary'])} · <a href=\"{tp.e(c['url'])}\">source</a>")
         ctx.tg.send("\n".join(lines))
-    ctx.vault.activity("🎬", "film room", f"{res['games']} games, {len(added)} labels from video, "
+    ctx.vault.activity("🎬", "film room", f"{res['games']} games, {len(res['added'])} labels from video, "
                        f"{len(arts['added'])} from articles on {', '.join(arts['teams'])}"
                        + (f", articles stopped: {arts['stop']}" if arts["stop"] else "")
+                       + f", {len(garts['added'])} from {garts['games']} game write-ups ({garts['left']} games left)"
                        + (f", {len(clash)} contradictions" if clash else "") + (f", stopped: {res['stop']}" if res["stop"] else ""))
     return {"games": res["games"], "labels": len(added), "article_labels": len(arts["added"]), "article_teams": arts["teams"],
+            "game_labels": len(garts["added"]), "game_stop": garts["stop"],
             "contradictions": len(clash), "stop": res["stop"], "article_stop": arts["stop"], "used": res["used"]}
