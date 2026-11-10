@@ -229,8 +229,8 @@ dialog.pdlg .dh { position: static; margin-top: 0; padding-top: 0; }
 .nw { background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
 .nw[hidden] { display: none; }
 .nw .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
-.nw .kd { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line-2); color: var(--ink-2); text-transform: capitalize; }
-.nw .kd.bad { color: var(--bad); border-color: currentColor; } .nw .kd.good { color: var(--good); border-color: currentColor; }
+.nw .kd, #cup .kd { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line-2); color: var(--ink-2); text-transform: capitalize; }
+.nw .kd.bad { color: var(--bad); border-color: currentColor; } .nw .kd.good, #cup .kd.good { color: var(--good); border-color: currentColor; }
 .nw .sum { font-size: 13px; color: var(--ink); }
 .nw .meta { font-size: 12px; color: var(--ink-3); }
 .nw .flag { color: var(--accent); font-weight: 600; }
@@ -410,6 +410,11 @@ dialog#drawer::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px
     <div class="sh"><div><h2>Standings by conference</h2><p>Seeds 1 to 6 go straight to the playoffs, 7 to 10 play in, 11 to 15 are in the lottery. Net rating is points per 100 possessions with a healthy rotation; odds from 10,000 simulated seasons.</p></div></div>
     <div class="confs" id="tiers"></div>
     <details><summary>Full table</summary><div style="overflow-x:auto"><table id="full"></table></div></details>
+  </section>
+
+  <section class="block reveal" id="s-cup">
+    <div class="sh"><div><h2>Emirates NBA Cup</h2><p id="cupSub"></p></div></div>
+    <div class="cstand" style="overflow-x:auto"><table id="cup"></table></div>
   </section>
 
   <section class="block reveal">
@@ -888,6 +893,21 @@ function newsCard(n) {
       <td class="r num">${r.healthy.toFixed(1)}</td><td class="r num">${r.net.toFixed(1)}</td><td class="r num">${r.off.toFixed(1)}</td>
       <td class="r num">${r.def.toFixed(1)}</td><td class="r num">${pct(r.playoffs)}</td><td class="r num">${pct(r.title, 1)}</td>
       <td class="r num">${r.elo_title == null ? "weekly" : pct(r.elo_title, 1)}</td><td class="r num">${pct(r.market, 1)}</td></tr>`).join("") + "</tbody>";
+})();
+
+// ---------- Emirates NBA Cup ----------
+(function cup() {
+  const C = D.cup || {groups: []};
+  if (!C.groups.length) { $("s-cup").hidden = true; return; }
+  const night = d => new Date(d + "T12:00:00").toLocaleDateString("en-GB", {day: "numeric", month: "short"});
+  $("cupSub").textContent = `Group play (US dates): ${C.nights.map(night).join(", ")}. Each team plays the other four in its group. Group winners and the best runner-up in each conference reach the quarterfinals. Ties: head-to-head, then point difference, then points scored.`;
+  $("cup").innerHTML = `<thead><tr><th>#</th><th>Team</th><th>W-L</th><th class="r">Diff</th><th class="r">Pts</th><th class="r">Left</th><th></th></tr></thead><tbody>` +
+    C.groups.map(g => `<tr class="bandlab"><td colspan="7">${esc(g.name.toUpperCase())}</td></tr>` + g.rows.map((r, i) =>
+      `<tr data-open="${esc(r.team)}" title="${esc(NAME(r.team))}"><td class="seed num">${i + 1}</td>
+        <td><span class="tm">${logo(r.team, "sm")}${esc(r.team)} <small>${esc((TM[r.team] && TM[r.team].short) || "")}</small></span></td>
+        <td class="num">${r.w}-${r.l}</td><td class="r num ${r.pd > 0 ? "up" : r.pd < 0 ? "down" : ""}">${r.pd > 0 ? "+" : ""}${r.pd}</td>
+        <td class="r num">${r.pf}</td><td class="r num muted">${r.left}</td>
+        <td>${r.flag ? `<span class="kd ${r.flag === "leads group" ? "good" : ""}">${esc(r.flag)}</span>` : ""}</td></tr>`).join("")).join("") + "</tbody>";
 })();
 
 // ---------- model strip ----------

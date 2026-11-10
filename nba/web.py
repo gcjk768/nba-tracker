@@ -111,6 +111,7 @@ def data(ctx) -> dict:
                   "market": {t: round(v, 4) for t, v in mkt.items()}, "latest": latest},
         "tonight_ctx": {g["game_id"]: game_context(ctx, g) for g in jobs.slate_view(ctx, today)},
         "news": _news(c),
+        "cup": cup_table(c, ctx.s.espn_season),
         "rankings": rankings, "status": status[:40],
         "styles": styles,
         "playbooks": playbooks(ctx, styles),
@@ -424,6 +425,61 @@ def _film(c, team, inferred):
         r["agrees_with"] = agree.get(r["label"]) if any(l["label"] == agree.get(r["label"]) for l in inferred) else None
         r["contradicts"] = next((x["inferred"] for x in clash if x["url"] == r["url"] and x["label"] == r["label"]), None)
     return pb
+
+
+def cup_table(c, season) -> dict:
+    """Emirates NBA Cup group play. ESPN tags the games but not the group, so the groups are the connected sets of
+    teams that meet in Cup games (5 per group, 4 games each). Ties: head-to-head among the tied teams, then point
+    difference, then points scored. Group winners + the best runner-up per conference reach the quarterfinals."""
+    games = [dict(r) for r in c.execute("""select date, home, away, status, home_pts, away_pts from games
+                                            where season=? and note like 'NBA Cup - Group%' order by date""", (season,))]
+    if not games:
+        return {"groups": [], "nights": []}
+    adj, rec = {}, {}
+    for g in games:
+        adj.setdefault(g["home"], set()).add(g["away"])
+        adj.setdefault(g["away"], set()).add(g["home"])
+    done = [g for g in games if g["status"] == "final" and g["home_pts"] is not None]
+    for t in adj:
+        rec[t] = {"team": t, "w": 0, "l": 0, "pf": 0, "pa": 0}
+    for g in done:
+        for t, o, pf, pa in ((g["home"], g["away"], g["home_pts"], g["away_pts"]), (g["away"], g["home"], g["away_pts"], g["home_pts"])):
+            r = rec[t]
+            r["w" if pf > pa else "l"] += 1
+            r["pf"] += pf
+            r["pa"] += pa
+    groups, seen = [], set()
+    for t in sorted(adj):
+        if t in seen:
+            continue
+        comp, todo = set(), [t]
+        while todo:
+            x = todo.pop()
+            if x not in comp:
+                comp.add(x)
+                todo += adj[x] - comp
+        seen |= comp
+        rows = [{**rec[x], "pd": rec[x]["pf"] - rec[x]["pa"], "left": max(0, 4 - rec[x]["w"] - rec[x]["l"]), "flag": ""}
+                for x in comp]
+
+        def h2h(r, rows=rows):          # wins against the teams level with it on wins
+            level = {x["team"] for x in rows if x["w"] == r["w"]}
+            return sum(1 for g in done if {g["home"], g["away"]} <= level and r["team"] in (g["home"], g["away"])
+                       and (g["home_pts"] > g["away_pts"]) == (g["home"] == r["team"]))
+        rows.sort(key=lambda r: (-r["w"], -h2h(r), -r["pd"], -r["pf"], r["team"]))
+        played = any(r["w"] + r["l"] for r in rows)
+        if played:
+            rows[0]["flag"] = "leads group"
+        groups.append({"conf": "East" if t in espn.EAST else "West", "rows": rows, "played": played})
+    for conf in ("East", "West"):
+        mine = [g for g in groups if g["conf"] == conf]
+        for i, g in enumerate(mine, 1):
+            g["name"] = f"{conf} · group {i}"
+        second = [g["rows"][1] for g in mine if g["played"] and len(g["rows"]) > 1]
+        if second:
+            max(second, key=lambda r: (r["w"], r["pd"], r["pf"]))["flag"] = "wild card"
+    groups.sort(key=lambda g: g["conf"] != "East")
+    return {"groups": groups, "nights": sorted({g["date"] for g in games})}
 
 
 def _news(c, team=None):

@@ -43,6 +43,9 @@ def store_game(conn, parsed, source):
             t["clean_poss"], t["clean_pts"], t["clean_opp_pts"] = t["poss"], t["pts"], g["home_pts"] + g["away_pts"] - t["pts"]
     players = [p for p in parsed["player_box"]]
     with db.tx(conn):
+        if not g.get("note"):                # summaries and hoopR carry no note: keep the schedule's (NBA Cup tag)
+            old = conn.execute("select note from games where game_id=?", (g["game_id"],)).fetchone()
+            g = {**g, "note": old["note"] if old else None}
         db.upsert(conn, "games", {**g, "source": source})
         for t in teams:
             db.upsert(conn, "team_box", t)

@@ -55,3 +55,10 @@ def test_schedule_never_clobbers_final(conn):
     collector.upsert_schedule_row(conn, {**g, "status": "scheduled", "home_pts": None})
     row = conn.execute("select status, home_pts from games where game_id='401909945'").fetchone()
     assert tuple(row) == ("final", 121)
+
+
+def test_storing_the_box_keeps_the_cup_note(conn):
+    parsed = espn.parse_summary(load("summary_401909945.json"))         # ESPN summaries carry no notes
+    collector.upsert_schedule_row(conn, {**parsed["game"], "status": "scheduled", "note": "NBA Cup - Group Play"})
+    collector.store_game(conn, parsed, "espn")
+    assert conn.execute("select note from games where game_id='401909945'").fetchone()[0] == "NBA Cup - Group Play"

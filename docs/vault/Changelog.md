@@ -5,6 +5,12 @@ updated: 2026-11-10
 # Changelog
 
 ## 2026-11-10
+- Emirates NBA Cup table on the dashboard (after Standings). ESPN tags Cup games ("NBA Cup - Group Play") but not the
+  group, so `web.cup_table` finds the 6 groups as the connected sets of teams that meet in Cup games. W-L, point diff,
+  points, games left; ties by head-to-head among tied teams, then diff, then points; flags "leads group" and the
+  best runner-up per conference as "wild card". Row opens the team drawer.
+- Fix: storing a box score wiped the game's note (ESPN summaries and hoopR have none), so a finished Cup game lost its
+  Cup tag, and the Cup final would have counted in the standings. `collector.store_game` keeps the schedule's note.
 - Fix: stale news (the owner: "Luka is playing tonight but dashboard shows he is out"). `tonight` was stored once at ingest
   and served for 48 h, so Nov 8 "Doncic out vs DET" items still showed "tonight · out" after he played Nov 9 and LAL
   was off. `news.recent` (dashboard, digest, Telegram pushes all read through it) now works out `tonight` from today's

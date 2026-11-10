@@ -37,3 +37,26 @@ def test_reveal_observers_do_not_use_ratio_thresholds_on_tall_sections():
     from pathlib import Path
     html = Path(__file__).resolve().parent.parent.joinpath("nba", "dashboard.html").read_text(encoding="utf-8")
     assert "{threshold: .08}" not in html and "{threshold: .05}).observe(box)" not in html
+
+
+def test_cup_table_ranks_groups_and_flags_wild_cards(conn):
+    def g(gid, home, away, hp=None, ap=None):
+        conn.execute("""insert into games(game_id, date, season, season_type, home, away, tip_utc, status, home_pts, away_pts,
+                        source, note) values (?, '2026-11-13', 2027, 2, ?, ?, '2026-11-14T00:00Z', ?, ?, ?, ?, 'NBA Cup - Group Play')""",
+                     (gid, home, away, "final" if hp else "scheduled", hp, ap, "espn" if hp else None))
+    east1, east2 = ["ATL", "BOS", "CHA", "CHI", "WSH"], ["CLE", "IND", "MIA", "NY", "PHI"]
+    for grp in (east1, east2):                                           # a full round robin, nothing played yet
+        for i, h in enumerate(grp):
+            for a in grp[i + 1:]:
+                g(f"{h}{a}", h, a)
+    g("x1", "MIL", "TOR")                                                # third East group, linked by one game
+    assert all(r["w"] + r["l"] == 0 and not r["flag"] for gr in web.cup_table(conn, 2027)["groups"] for r in gr["rows"])
+    conn.execute("update games set status='final', source='espn', home_pts=110, away_pts=100 where game_id in ('ATLBOS','CLEIND','BOSCHA')")
+    conn.execute("update games set status='final', source='espn', home_pts=101, away_pts=100 where game_id='ATLCHA'")
+    cup = web.cup_table(conn, 2027)
+    assert [gr["name"] for gr in cup["groups"]][:2] == ["East · group 1", "East · group 2"] and len(cup["groups"]) == 3
+    a = cup["groups"][0]["rows"]
+    assert [r["team"] for r in a[:2]] == ["ATL", "BOS"] and a[0]["flag"] == "leads group" and (a[0]["w"], a[0]["l"]) == (2, 0)
+    assert a[0]["pd"] == 11 and a[0]["left"] == 2
+    assert a[1]["flag"] == "wild card"                                  # BOS 1-1 beats every other East runner-up
+    assert cup["nights"] == ["2026-11-13"]
