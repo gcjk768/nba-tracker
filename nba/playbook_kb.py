@@ -80,6 +80,7 @@ PLAYS = {
     "scram switch": ("coverage", "A late switch away from the ball to get a big off a small mismatch."),
     "tag": ("coverage", "A weak-side defender bumps the rolling big, then recovers to his own man."),
     "peel switch": ("coverage", "A defender switches onto a driver to stop him, and the rest rotate behind."),
+    "scramble": ("coverage", "Defenders rotate on the fly after a switch or a help step, covering whoever is open and fixing mismatches."),
     "half-court trap": ("coverage", "Two defenders trap the ball near half court or in a corner to force a turnover."),
 }
 
@@ -172,7 +173,7 @@ DEF_GROUP = {"man-to-man": "base", "drop": "pick-and-roll", "switch": "pick-and-
              "hedge": "pick-and-roll", "show": "pick-and-roll", "ice": "pick-and-roll", "at the level": "pick-and-roll",
              "scram switch": "pick-and-roll", "tag": "help", "peel switch": "help", "zone": "zone", "2-3 zone": "zone",
              "3-2 zone": "zone", "1-3-1 zone": "zone", "matchup zone": "zone", "box-and-one": "junk", "triangle-and-two": "junk",
-             "full-court press": "pressure", "half-court trap": "pressure",
+             "full-court press": "pressure", "half-court trap": "pressure", "scramble": "help",
              "pack the paint": "help", "run shooters off": "help", "rim protector": "help", "turnover-forcing": "pressure"}
 COVERAGE_GIVES = {   # opponents' make rate on these vs this team = an ESTIMATE of how the scheme holds up (never measured per scheme)
     "drop": ["pull-up mid-range", "pull-up 3", "drive: floater / short jumper"],

@@ -34,7 +34,23 @@ SETS = {   # normalised label -> kind; anything else Claude returns is kept as "
     "1-3-1 zone": "coverage", "box-and-one": "coverage", "triangle-and-two": "coverage", "at the level": "coverage",
     "scram switch": "coverage", "tag": "coverage", "peel switch": "coverage", "full-court press": "coverage",
     "matchup zone": "coverage", "man-to-man": "coverage", "half-court trap": "coverage",
+    "scramble": "coverage", "veer switch": "coverage", "backdoor cuts": "action", "lob": "action", "alley-oop": "action",
 }
+# what writers call the same thing -> one name (2026-11-10: "horn", "back door", "ball screen" showed up as separate plays)
+ALIASES = {"horn": "horns", "horns set": "horns", "back door": "backdoor cuts", "backdoor": "backdoor cuts", "backdoor cut": "backdoor cuts",
+           "ball screen": "pick-and-roll", "screen-and-roll": "pick-and-roll", "pick and roll": "pick-and-roll", "pnr": "pick-and-roll",
+           "two-man game": "pick-and-roll", "spain pnr": "spain pick-and-roll", "spain pick and roll": "spain pick-and-roll",
+           "pick and pop": "pick-and-pop", "handoff": "dho", "dribble hand-off": "dho", "dribble handoff": "dho", "iso": "isolation",
+           "post up": "post-up", "switching": "switch", "switch everything": "switch", "drop coverage": "drop", "zone defense": "zone",
+           "2-3": "2-3 zone", "3-2": "3-2 zone", "1-3-1": "1-3-1 zone", "scrambles": "scramble", "veer switches": "veer switch",
+           "peel switches": "peel switch", "full court press": "full-court press", "press": "full-court press", "trap": "blitz",
+           "man to man": "man-to-man", "lobs": "lob", "alley oop": "alley-oop"}
+
+
+def normalise(label: str, kind: str | None) -> tuple[str, str | None]:
+    """One name per play, and the side the name belongs to (a coverage named by the writer is never an offensive set)."""
+    label = ALIASES.get(label.strip().lower(), label.strip().lower())
+    return label, SETS.get(label) or (kind if kind in ("set", "action", "coverage") else None)
 CONTRADICTS = {   # reported coverage vs our inferred defense label that it argues against
     "switch": ("Concedes the mid-range (drop-style)",),
     "blitz": ("Concedes the mid-range (drop-style)",),
@@ -134,10 +150,9 @@ def extract(text, game, url, title, model, runner=None, prompt="film.md") -> lis
             continue
         for x in data.get("items", []):
             team = espn.team_code(str(x.get("team", "")))
-            label = str(x.get("label", "")).strip().lower()
+            label, kind = normalise(str(x.get("label", "")), x.get("kind"))
             if team not in (game["home"], game["away"]) or not label:
                 continue
-            kind = SETS.get(label) or (x.get("kind") if x.get("kind") in ("set", "action", "coverage") else None)
             if not kind:
                 continue
             found.append({"team": team, "label": label, "kind": kind, "who": str(x.get("who", ""))[:80], "ato": int(bool(x.get("ato"))),

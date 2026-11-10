@@ -46,3 +46,12 @@ def test_game_articles_tie_labels_to_the_game_and_search_each_game_once(conn):
     assert web.calls == ["search", "read"]                         # old preview and box-score page never read
     again = si.game_articles(conn, "2026-11-10", "m", ("PHI",), 2027, reach=si.Reach(web, sleep=lambda s: None), claude_runner=claude_ok)
     assert again["games"] == 0 and web.calls == ["search", "read"]
+
+
+def test_play_names_are_normalised_and_land_on_the_right_side():
+    assert si.normalise("Horn", "set") == ("horns", "set")
+    assert si.normalise("back door", "action") == ("backdoor cuts", "action")
+    assert si.normalise("ball screen", "action") == ("pick-and-roll", "action")
+    assert si.normalise("scramble", "action") == ("scramble", "coverage")          # a defensive rotation, not an offensive set
+    assert si.normalise("2-3", None) == ("2-3 zone", "coverage")
+    assert si.normalise("vibes", "mood") == ("vibes", None)

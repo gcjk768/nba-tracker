@@ -5,6 +5,12 @@ updated: 2026-11-10
 # Changelog
 
 ## 2026-11-10
+- Play names checked against their sources (the owner: "are you sure the play name is correct?"). Every per-game label
+  for LAL/SAS/PHI/OKC was re-read with the NAS browser: team and play matched the text for all readable sources except
+  one (OKC "drop" vs SAS 10-20: the piece said defenses in general drop on Kornet; removed). NBC Sports Philadelphia,
+  Lakers Wire and allphly block the browser, so 8 PHI/LAL labels stay unverified. Names were not normalised ("horn",
+  "back door", "ball screen", "two-man game") and "scramble" / "veer switch" were filed as offense: new
+  `social_intel.normalise` (ALIASES + side from SETS) runs on every extracted label; stored rows renamed once.
 - Dashboard split into pages (the owner: "side bar or navbar, split into different pages"). Navbar in the sticky top bar:
   Today (last night, tonight, injuries, news) · Game by game · Playbooks (+ what beats what) · Styles (+ what decides
   games) · Title race (hero, standings, Cup, odds over time) · Model. Hash routing (`#games`), so links and the back
