@@ -4,6 +4,9 @@ updated: 2026-11-10
 ---
 # Changelog
 
+## 2026-11-11
+- Docs only: README rewritten around the offence/defence play analysis (why a team won or lost) with a step table, and a draw.io architecture diagram added at `docs/architecture.drawio.svg`. Repo made public the same day.
+
 ## 2026-11-10
 - Fix: LAL showed "5-out" as its offensive system (the owner: "is 5-out for Lakers? are you sure?"). The source (Silver
   Screen and Roll, Oct 14) only says Mamukelashvili "brings the ability for LA to operate with five-out spacing": a
