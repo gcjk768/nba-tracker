@@ -799,6 +799,16 @@ function leanKey(label) {
   const setLine = x => `<li>${MARK[x.impact] || `<span class="muted" title="the write-up does not say if it worked">•</span>`} ${chip(x)}${x.ato ? ' <span class="muted">ATO</span>' : ""}
     <span class="say">${esc(x.effect || x.summary || "")}</span>${x.url ? ` <a class="muted" href="${esc(x.url)}" target="_blank" rel="noopener">source</a>` : ""}</li>`;
   const WHY = {shooting: "shooting", turnovers: "turnovers", "off. rebounds": "offensive rebounds", "free throws": "free throws"};
+  // The analysts' breakdown of this game (nba/breakdown.py): the coach's verdict, then each analyst's findings.
+  const EFF = {helped: `<span class="up" title="helped">✅</span>`, hurt: `<span class="down" title="hurt">❌</span>`, neutral: `<span class="muted">•</span>`};
+  const finds = (title, rows) => rows && rows.length ? `<div class="muted" style="font-size:12px;margin-top:8px">${title}</div><ul class="sets">${
+    rows.map(f => `<li>${EFF[f.effect] || EFF.neutral} ${esc(f.point)} <span class="say">${esc(f.evidence)}</span></li>`).join("")}</ul>` : "";
+  const breakdown = b => !b ? "" : `<div class="gline"><b>Why</b><div>
+      <div><b>${esc(b.headline)}</b></div>
+      <ol class="sets" style="list-style:decimal;padding-left:18px">${b.reasons.map(r => `<li>${esc(r.reason)} <span class="say">${esc(r.evidence)}</span> <span class="grp">${esc(r.side)}</span></li>`).join("")}</ol>
+      ${b.next_time ? `<div class="say">Next time: ${esc(b.next_time)}</div>` : ""}
+      <details class="more"><summary>What each analyst saw</summary>
+        ${finds("Offence", b.offence)}${finds("Defence", b.defence)}${finds("Players", b.players)}</details></div></div>`;
   const card = g => {
     const o = g.offense, d = g.defense, opp = esc(g.opp === "SA" ? "SAS" : g.opp);
     const best = o.plays.filter(r => r.att >= 5).sort((a, b) => b.success * b.att - a.success * a.att)[0];
@@ -809,6 +819,7 @@ function leanKey(label) {
       <div class="gh"><span class="muted mono">${esc(g.date.slice(5))}</span><span data-open="${esc(g.opp)}" style="display:flex;gap:6px;align-items:center">${g.home ? "vs" : "@"} ${logo(g.opp)} <b>${esc(NAME(g.opp))}</b></span>
         <span class="res ${g.result}">${g.result} ${g.pts}-${g.opp_pts}${g.ot ? " OT" : ""}</span>${g.cup ? `<span class="sc">NBA Cup</span>` : ""}</div>
       ${g.why.length ? `<div class="why">${g.result === "W" ? "Won on" : "Lost on"}: ${g.why.map(w => `<b>${esc(WHY[w.factor] || w.factor)}</b> ${w.pts > 0 ? "+" : ""}${w.pts.toFixed(1)}`).join(", ")} <span class="muted">pts of margin</span></div>` : ""}
+      ${breakdown(g.breakdown)}
       <div class="gline"><b>Offense</b><div>
         ${(() => {
           const sys = o.sets.filter(x => x.kind === "system"), calls = o.sets.filter(x => x.source === "this game" && x.kind === "set"),

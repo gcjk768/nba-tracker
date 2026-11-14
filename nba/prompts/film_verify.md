@@ -7,7 +7,7 @@ season piece) and "labels". Each label is a claim that someone else made about t
 - "side": "offence" (the team ran it with the ball) or "defence" (the team played it without the ball).
 - "scope": how big the claim is, one of
   - "game": the team ran or played it in the game given;
-  - "season": it is something the team runs or plays this season;
+  - "season": the team has run or played it this season, in any game (it belongs in the team's playbook);
   - "system": it is the team's base or core offence, its whole way of playing.
 
 Judge every label ONLY from "text". Do not use what you know about the teams, the players, the coaches or the season.
@@ -26,8 +26,10 @@ For each label answer:
 - "scope_ok": true only when the text supports the claim at the size given. "system" needs the text to say it is the
   team's base or core offence ("their offence is built on", "they run Princeton", "their system"); a look that
   depends on one player, one lineup or one stretch of a game ("X lets them play five-out", "when Y sits they go
-  five-out") is false. "season" needs the text to say the team does it as a habit this season, not in one game or
-  one possession. "game" needs it to have happened in the game given: assume the text is about that game unless it
+  five-out") is false. "season" is true when the text shows the team actually running or playing it this season,
+  even in one game or one possession that the text describes ("the Celtics go to Zoom action", "Giddey set a pindown
+  for Wilson"); it is false for something from an earlier season, something the team should or might do, or a remark
+  about basketball in general. "game" needs it to have happened in the game given: assume the text is about that game unless it
   says otherwise.
 - "side_ok": true only when the text shows the team on the side given. A coverage, switch, scramble, trap or zone is
   what the DEFENCE does; a team that scored against a zone did not play a zone.

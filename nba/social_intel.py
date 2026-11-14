@@ -224,6 +224,54 @@ def rejects(conn, limit=50) -> list[dict]:
     return [dict(r) for r in conn.execute("select * from film_rejects order by id desc limit ?", (limit,))]
 
 
+def reverify(conn, model, reach=None, claude_runner=None) -> dict:
+    """Backfill for labels stored before verify() existed: read each source again, run verify() on its stored labels and
+    move the unsupported ones from film_items to film_rejects. A source that cannot be read again (blocked, gone, a
+    search-result page) is left as it is and listed in "unread". Resumable: a checked source gets film_videos.status
+    "reverified: …" and is skipped next time. Run by hand: python -m nba reverify."""
+    reach = reach or Reach(budget={"web_read": 100, "read": 20, "subtitle": 6})
+    out = {"sources": 0, "kept": 0, "dropped": 0, "unread": [], "stop": None}
+    urls = [r[0] for r in conn.execute("select distinct url from film_items where url not in "
+                                       "(select url from film_videos where status like 'reverified%') order by url like '%youtu%', url")]   # YouTube last: its rate limit stops the run
+    try:
+        for url in urls:
+            rows = [dict(r) for r in conn.execute("select * from film_items where url=?", (url,))]
+            if "exa.ai/" in url:          # a podcast page: reading it again gives the first ~850 words, not the transcript
+                out["unread"].append(url)  # the labels came from, so "not in the text" would prove nothing (2026-11-14)
+                continue
+            if any(x in url for x in ("youtube.com", "youtu.be")):
+                got = reach("subtitle", url, "--lang", "en,en-orig") or reach("read", url) or []
+            else:
+                got = reach("web_read", url) or []
+            text = (got[0].get("text") if got else "") or ""
+            if len(text.split()) < 50:
+                out["unread"].append(url)
+                continue
+            g = conn.execute("select * from games where game_id=?", (rows[0]["game_id"],)).fetchone() if rows[0]["game_id"] else None
+            words, ok, why = text.split(), set(), {}
+            for i in range(0, min(len(words), 18000), 6000):
+                todo = [r for r in rows if r["id"] not in ok]
+                if not todo:
+                    break
+                kept, bad = verify(" ".join(words[i:i + 6000]), todo, dict(g) if g else None, model, claude_runner, season=g is None)
+                ok |= {r["id"] for r in kept}
+                why.update({r["id"]: (r, reason, quote) for r, reason, quote in bad})
+            gone = [v for k, v in why.items() if k not in ok]
+            if any(reason == "verifier failed" for _, reason, _ in gone):      # no usable verdict: judge it on the next run
+                out["unread"].append(url)
+                continue
+            _reject(conn, gone)
+            with db.tx(conn):
+                conn.executemany("delete from film_items where id=?", [(r["id"],) for r, _, _ in gone])
+            _video(conn, url, rows[0]["game_id"] or "", f"reverified: {len(rows) - len(gone)}/{len(rows)} kept")
+            out["sources"] += 1
+            out["kept"] += len(rows) - len(gone)
+            out["dropped"] += len(gone)
+    except Stop as e:
+        out["stop"] = str(e)
+    return out
+
+
 def extract(text, game, url, title, model, runner=None, prompt="film.md", conn=None) -> list[dict]:
     """claude -p (cheap model): named sets / coverages only, strict JSON, validated and normalised, then checked by
     verify() chunk by chunk (FILM_VERIFY=off skips that). Rejected labels go to film_rejects when `conn` is given."""

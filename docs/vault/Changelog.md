@@ -23,6 +23,28 @@ updated: 2026-11-14
   the API key hit its Console spend limit and the container has no fallback token, so every call said "Not logged
   in"). Now a CLI failure in the extractor, or no reply at all from the verifier, raises `Stop("claude
   unavailable…")`: the pass ends, the source stays unread and is tried again the next night.
+- Game breakdown by a team of analysts (the owner: "a detail breakdown instead of just general stats", why a team won
+  or lost each match). New `nba/breakdown.py`: code builds the facts for one team in one game from what is already
+  measured (`game_log.build`: how the shots came, named plays and coverages reported for that game, the defense read
+  from the shots; `player_box` + `player_wpa`; `insights.game_recipe` points of margin). Three specialists read their
+  own slice in parallel on `CLAUDE_MODEL_ASK` (`nba/prompts/breakdown_offence.md`, `breakdown_defence.md`,
+  `breakdown_players.md`), then the head coach (`breakdown_coach.md`, `CLAUDE_MODEL_DAILY`) reads their findings and
+  the margin split and gives a headline, 2-3 ranked reasons and one thing for next time. Number guard in code
+  (`breakdown.numbers` / `invented` / `clean`): a finding or reason with a number that is not in its facts is
+  dropped; the agent is asked once more first. Stored in the new table `game_breakdowns` (one row per game and
+  team), shown as the "Why" block at the top of each game card (`web.game_log_team`, `nba/dashboard.html`). Runs at
+  the end of the daily job (last night's games) and of the film job (a game is redone when a write-up of it
+  arrives), tracked teams only, `BREAKDOWN_MAX` team-games per run (default 12, 4 calls each). By hand:
+  `python -m nba breakdown [N]`. Claude down: nothing is stored and the run stops.
+- Fix: the verifier was too strict on season pieces. The first backfill dropped 38 labels whose quotes plainly show
+  the team running the play ("the Celtics go to Zoom action") because the prompt asked for proof of a season-long
+  habit. Root cause: the "season" scope was written as "a habit", but the playbook only claims "this team has run it
+  this season". `nba/prompts/film_verify.md` now says so; "system" stays strict. Those sources were restored from
+  the backup and judged again. Podcast pages (`exa.ai/library/podcast`) are left alone: a re-read is cut to ~850 words.
+- Backfill: `python -m nba reverify` (`social_intel.reverify`). All 162 labels on the playbooks were stored 9-12 Nov,
+  before the verifier, so the page still showed unchecked labels (the owner: "playbook is still not correct"). It reads
+  each source again, runs `verify()` on its stored labels and moves the unsupported ones to `film_rejects`. A source
+  that cannot be read again is left alone and listed. Resumable (`film_videos.status` = `reverified: k/n kept`).
 - Fix (made on the NAS by NAS Doctor at 05:51, adopted here): `db.meta_get` reads under `LOCK` like every other
   access to the shared connection.
 

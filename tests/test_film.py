@@ -220,6 +220,27 @@ def test_claude_down_stops_the_pass_and_leaves_the_source_unread(conn, dead):
     assert conn.execute("select count(*) from film_games where status='done'").fetchone()[0] == 0
 
 
+def test_reverify_moves_unsupported_old_labels_and_leaves_unreadable_sources(conn):
+    _setup(conn)
+    gid = conn.execute("select game_id from games limit 1").fetchone()[0]
+    for url, team, label, kind in (("https://a.example/post", "PHI", "horns", "set"), ("https://a.example/post", "CHI", "switch", "coverage"),
+                                   ("https://gone.example/x", "PHI", "zone", "coverage")):
+        si._store(conn, gid, "2026-11-08", {"team": team, "label": label, "kind": kind, "who": "", "summary": "s", "title": "t", "ato": 0}, url, "host")
+
+    def web(cmd):
+        ok = cmd[3].startswith("https://a.example")
+        return 0, json.dumps({"ok": True, "items": [{"text": TRANSCRIPT}] if ok else []})
+    no = lambda l, text: {"supported": False, "quote": ""} if l["label"] == "switch" else None
+    runner = verified(_extractor, no)
+    res = si.reverify(conn, "m", reach=si.Reach(web, sleep=lambda s: None), claude_runner=runner)
+    assert (res["sources"], res["kept"], res["dropped"], res["unread"], res["stop"]) == (1, 1, 1, ["https://gone.example/x"], None)
+    assert {(r["team"], r["label"]) for r in conn.execute("select team, label from film_items")} == {("PHI", "horns"), ("PHI", "zone")}
+    assert [(r["label"], r["reason"]) for r in si.rejects(conn)] == [("switch", "not supported by the text")]
+    seen = len(runner.seen)
+    assert si.reverify(conn, "m", reach=si.Reach(web, sleep=lambda s: None), claude_runner=runner)["sources"] == 0
+    assert len(runner.seen) == seen                                      # the checked source is not paid for twice
+
+
 def test_film_verify_off_is_the_old_single_call(conn, monkeypatch):
     monkeypatch.setenv("FILM_VERIFY", "off")
     runner = verified(_extractor, lambda l, text: {"supported": False})

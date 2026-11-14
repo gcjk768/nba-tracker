@@ -460,6 +460,10 @@ def _daily(ctx, key):
                        + (" · stats-only (Claude failed)" if verdict is None else ""), today)
     if season_over(ctx):
         season_wrap(ctx)
+    broke = _breakdowns(ctx)                         # last night's games, the same afternoon; the film job redoes a game
+    if broke["done"] or broke["stop"]:               # when a write-up of it arrives
+        ctx.vault.activity("🧠", "game breakdowns", f"{broke['done']} written, {broke['left']} left"
+                           + (f", stopped: {broke['stop']}" if broke["stop"] else ""), today)
     return {"games": len(games), "aar": len(aar), "verdict": verdict is not None}
 
 
@@ -1049,6 +1053,16 @@ def film(ctx, key=None):
     return guarded(ctx, "film", key, _film)
 
 
+def _breakdowns(ctx) -> dict:
+    """The analysts' game breakdowns (nba/breakdown.py). Best effort: a failure here never fails the job around it."""
+    from . import breakdown
+    try:
+        return breakdown.run(ctx.conn, ctx.s.espn_season, ctx.s.model_ask, ctx.s.model_daily, ctx.runner)
+    except Exception as e:
+        log.warning("game breakdowns failed: %s", e)
+        return {"done": 0, "left": 0, "failed": 0, "stop": str(e)[:120]}
+
+
 def _film(ctx, key):
     from . import schemes, social_intel
     from . import game_log
@@ -1064,6 +1078,7 @@ def _film(ctx, key):
     want += [x for k, (ctrs, _) in kb.COUNTERS.items() for x in [k] + ctrs]
     vids = social_intel.play_videos(ctx.conn, list(dict.fromkeys(want)), limit=10)
     rejected = len(social_intel.rejects(ctx.conn, 10**6)) - rej0
+    broke = _breakdowns(ctx)
     added = res["added"] + garts["added"]
     by_game = {}
     for it in added:
@@ -1092,6 +1107,8 @@ def _film(ctx, key):
                        + f", {len(garts['added'])} from {garts['games']} game write-ups ({garts['left']} games left)"
                        + (f", game by game now tracks {new_team}" if new_team else "")
                        + (f", {rejected} labels rejected by the verifier (table film_rejects)" if rejected else "")
+                       + (f", {broke['done']} game breakdowns written ({broke['left']} left)" if broke["done"] else "")
+                       + (f", breakdowns stopped: {broke['stop']}" if broke["stop"] else "")
                        + (f", {len(clash)} contradictions" if clash else "") + (f", stopped: {res['stop']}" if res["stop"] else ""))
     return {"games": res["games"], "labels": len(added), "article_labels": len(arts["added"]), "article_teams": arts["teams"],
             "game_labels": len(garts["added"]), "game_stop": garts["stop"], "new_team": new_team,

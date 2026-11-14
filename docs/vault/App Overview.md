@@ -43,6 +43,10 @@ asyncio loop; pipelines run one at a time in a worker thread (`nba/scheduler.py`
   then `normalise`) and `verify` (a second Haiku call per chunk, `nba/prompts/film_verify.md`, schema `analyst.Checks` in
   `nba/analyst.py`: supported + verbatim quote + scope + side; the quote must be found in the chunk by code). Failed labels
   are not stored; they go to table `film_rejects` (append-only audit, `social_intel.rejects`). `FILM_VERIFY=off` skips it.
+- `nba/breakdown.py` — why a tracked team won or lost each game, by four agents: offence, defence and players analysts
+  (each reads only its own facts, in parallel) and a head coach who writes the verdict from their findings and the
+  points-of-margin split. Prompts `nba/prompts/breakdown_*.md`. Code drops anything with a number that is not in the
+  facts. Table `game_breakdowns`; shown as "Why" on the game card via `nba/web.py` `game_log_team`. `python -m nba breakdown [N]`.
 - `nba/game_log.py` — focus teams (LAL, SA, PHI, OKC) game by game: plays run, defense scheme played (inferred per game,
   or reported by a write-up of that game via `social_intel.game_articles`), counters, plays allowed; `web.game_log`.
 - `nba/web.py` + `nba/dashboard.html` — animated dashboard in pages (navbar, `#today` `#games` `#playbooks` `#teams` `#race` `#model`) on NAS port 8795 (team drawer at `/team/<CODE>.json`) (title race replay, odds over time, power

@@ -204,7 +204,11 @@ def game_log(ctx) -> dict:
 
 def game_log_team(ctx, team: str) -> dict | None:
     G = game_log(ctx)
-    return {**G[team], "league": G["_league"]} if team in G else None
+    if team not in G:
+        return None
+    from . import breakdown
+    B = breakdown.stored(ctx.conn, team)         # the analysts' write-up per game (nba/breakdown.py), None until it has run
+    return {**G[team], "games": [{**g, "breakdown": B.get(g["game_id"])} for g in G[team]["games"]], "league": G["_league"]}
 
 
 def named_sets(ctx, team: str) -> list[dict]:

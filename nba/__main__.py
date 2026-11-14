@@ -57,6 +57,13 @@ def main(argv: list[str]) -> int:
         print(json.dumps(tuning.tune(ctx.conn, df, st["prior"], st["params"]), indent=1, default=str))
     elif cmd == "history":              # fill past days' ratings + title sims for the dashboard
         print(f"{jobs.rebuild_history(ctx)} days written")
+    elif cmd == "reverify":             # check the stored film labels against their sources again (social_intel.reverify)
+        from . import social_intel
+        print(json.dumps(social_intel.reverify(ctx.conn, ctx.s.model_ask, claude_runner=ctx.runner), indent=1))
+    elif cmd == "breakdown":            # python -m nba breakdown [N]: analysts' breakdown of the newest N team-games
+        from . import breakdown
+        print(json.dumps(breakdown.run(ctx.conn, ctx.s.espn_season, ctx.s.model_ask, ctx.s.model_daily, ctx.runner,
+                                       **({"limit": int(argv[1])} if len(argv) > 1 else {}))))
     elif cmd == "backtest":
         from . import backtest
         print(json.dumps(backtest.run(ctx), indent=1, default=str))
