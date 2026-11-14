@@ -141,10 +141,10 @@ def missing_dates(conn, today: str) -> list[str]:
     return [r[0] for r in rows]
 
 
-def backfill(conn, client, season: int, today: str) -> CollectResult:
+def backfill(conn, client, season: int, today: str, hoopr=fallback) -> CollectResult:
     total = CollectResult()
     for d in missing_dates(conn, today):
-        r = collect_date(conn, client, d, season)
+        r = collect_date(conn, client, d, season, hoopr)
         total.new_games += r.new_games
         total.warnings += r.warnings
         total.pending += r.pending

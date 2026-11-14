@@ -380,7 +380,7 @@ def _daily(ctx, key):
         if not remaining_games(ctx):
             collector.refresh_schedule(conn, ctx.client, s.espn_season, seasontype=3)
         res = collector.collect_date(conn, ctx.client, last_night, s.espn_season, ctx.hoopr)   # always, even if the schedule feed failed
-        more = collector.backfill(conn, ctx.client, s.espn_season, today)
+        more = collector.backfill(conn, ctx.client, s.espn_season, today, ctx.hoopr)
         res.new_games += more.new_games
         res.pending += more.pending
         warnings += res.warnings + more.warnings
@@ -803,7 +803,7 @@ def _injury_check(ctx, key):
                          + (f" · {c['detail']}" if c["detail"] else ""), header=f"# Injury log {today[:7]}\n")
     pend = json.loads(db.meta_get(conn, "pending_dates") or "[]")
     for d in pend:                                             # retry games that had no box score yet
-        r = collector.collect_date(conn, ctx.client, d, ctx.s.espn_season)
+        r = collector.collect_date(conn, ctx.client, d, ctx.s.espn_season, ctx.hoopr)
         if not r.pending:
             db.meta_set(conn, "pending_dates", "[]")
     pending = inj_mod.pending_changes(conn)

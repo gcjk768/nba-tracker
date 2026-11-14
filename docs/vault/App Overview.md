@@ -13,7 +13,7 @@ asyncio loop; pipelines run one at a time in a worker thread (`nba/scheduler.py`
 - `nba/espn.py` — ESPN public JSON: scoreboard, summary (box, play-by-play, win probability per play, odds),
   injuries, team schedules, DraftKings title futures. 1.5 s between calls, 3 tries, plain client name.
 - `nba/fallback.py` — hoopR-nba-data parquet (same ESPN ids); fallback after ESPN fails, history for Elo/backtest.
-- `nba/collector.py` — idempotent collect + backfill; `source` column says espn/hoopr; schedule never overwrites a final.
+- `nba/collector.py` — idempotent collect + backfill; `source` column says espn/hoopr; schedule never overwrites a final. `backfill` and `collect_date` take the hoopR fallback as an argument (jobs pass `ctx.hoopr`), so tests never reach the network.
 
 ## Model
 - `nba/ratings.py` — ridge off/def per 100 (garbage time removed, half of 3P% luck removed, recency half-life),

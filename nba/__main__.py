@@ -45,7 +45,7 @@ def main(argv: list[str]) -> int:
         print(jobs.injury_check(ctx))
     elif cmd == "backfill":
         collector.refresh_schedule(ctx.conn, ctx.client, ctx.s.espn_season)
-        r = collector.backfill(ctx.conn, ctx.client, ctx.s.espn_season, ctx.now_sgt().date().isoformat())
+        r = collector.backfill(ctx.conn, ctx.client, ctx.s.espn_season, ctx.now_sgt().date().isoformat(), ctx.hoopr)
         print(f"{len(r.new_games)} new games; warnings: {r.warnings}; pending: {r.pending}")
     elif cmd == "predict":
         st = jobs.state(ctx)

@@ -5,6 +5,7 @@ updated: 2026-11-14
 # Changelog
 
 ## 2026-11-14
+- Fix: `collector.backfill` now takes the hoopR source it is given (`ctx.hoopr`) and hands it to `collect_date`; before, it always used the real one. In production that is the same object, so nothing changes there. In tests it meant `test_espn_dead_falls_back_and_still_sends` went to the network and started failing once real hoopR data for 2026-11-08 existed (5 games stored, 1 expected). All 104 tests pass.
 - Film room: independent verifier before a label is stored (after the 2026-11-10 hand re-check of 34 labels: LAL
   "5-out" from a one-lineup remark, OKC "drop" not in its source, "scramble" filed as offense). Every chunk that gave
   at least one label gets a second Haiku call (`nba/prompts/film_verify.md`, through `analyst.run` with the new
