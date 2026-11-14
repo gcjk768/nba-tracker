@@ -23,6 +23,24 @@ updated: 2026-11-14
   the API key hit its Console spend limit and the container has no fallback token, so every call said "Not logged
   in"). Now a CLI failure in the extractor, or no reply at all from the verifier, raises `Stop("claude
   unavailable…")`: the pass ends, the source stays unread and is tried again the next night.
+- Write-up search reads the sites that name plays first. The first all-team pass read 10 games and found 2 named
+  plays; of 58 sites read so far, 36 had given nothing (general recaps), while team film-room blogs and breakdown
+  newsletters gave most. `social_intel.host_yield` (named plays per source, from `film_videos`) now orders each game's
+  search results before the 3 reads; the first query asks for "film room breakdown sets plays coverage".
+- Three follow-ups the owner asked for ("do all 3"; "playbook can get from youtube or other source"):
+  1. Every match: `breakdown.run` and the game-by-game page (`web.game_log`) now cover all 30 teams, tracked teams
+     first (`game_log.all_teams`). `BREAKDOWN_MAX` default 30 team-games per run, so the season backlog clears over
+     about a week.
+  2. More named plays per game: `social_intel.game_articles` searches write-ups for every team's games (`every=`; a
+     game of two untracked teams is searched from one side only), 10 games a pass with searches 8 s apart, and it now
+     also runs at the end of the daily job (`jobs._writeups`), not only in the film job. The YouTube pass
+     (`social_intel.run`) no longer stops when captions are refused (HTTP 429 from the home IP) or their budget is
+     used: it carries on with each video's description (`done: n labels (description)`).
+  3. Playbook analyst: a fifth agent (`breakdown.playbooks`, `nba/prompts/breakdown_playbook.md`, `CLAUDE_MODEL_DAILY`)
+     follows each team's named plays and coverages across its games (which worked, which failed, single sightings)
+     with the same number guard. Table `playbook_notes`, redone when a label or a game is added, `PLAYBOOK_NOTES_MAX`
+     teams per run (default 10). Shown as "Playbook analyst" on each team's playbook card.
+  By hand: `python -m nba writeups`, `python -m nba breakdown [N]`, `python -m nba playbooks [N]`.
 - Game breakdown by a team of analysts (the owner: "a detail breakdown instead of just general stats", why a team won
   or lost each match). New `nba/breakdown.py`: code builds the facts for one team in one game from what is already
   measured (`game_log.build`: how the shots came, named plays and coverages reported for that game, the defense read

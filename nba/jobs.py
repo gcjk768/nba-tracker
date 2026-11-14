@@ -460,9 +460,15 @@ def _daily(ctx, key):
                        + (" · stats-only (Claude failed)" if verdict is None else ""), today)
     if season_over(ctx):
         season_wrap(ctx)
-    broke = _breakdowns(ctx)                         # last night's games, the same afternoon; the film job redoes a game
-    if broke["done"] or broke["stop"]:               # when a write-up of it arrives
-        ctx.vault.activity("🧠", "game breakdowns", f"{broke['done']} written, {broke['left']} left"
+    try:                                             # write-ups of last night's games first: they name the plays
+        arts = _writeups(ctx, today)
+    except Exception as e:
+        log.warning("game write-ups failed: %s", e)
+        arts = {"added": [], "games": 0, "stop": str(e)[:120]}
+    broke = _breakdowns(ctx)                         # then the analysts; the film job redoes a game when more arrives
+    if broke["done"] or broke["stop"] or arts["added"]:
+        ctx.vault.activity("🧠", "game breakdowns", f"{len(arts['added'])} named plays from {arts['games']} game write-ups, "
+                           f"{broke['done']} breakdowns written, {broke['left']} left, {broke.get('notes', 0)} playbook reads"
                            + (f", stopped: {broke['stop']}" if broke["stop"] else ""), today)
     return {"games": len(games), "aar": len(aar), "verdict": verdict is not None}
 
@@ -1057,10 +1063,26 @@ def _breakdowns(ctx) -> dict:
     """The analysts' game breakdowns (nba/breakdown.py). Best effort: a failure here never fails the job around it."""
     from . import breakdown
     try:
-        return breakdown.run(ctx.conn, ctx.s.espn_season, ctx.s.model_ask, ctx.s.model_daily, ctx.runner)
+        out = breakdown.run(ctx.conn, ctx.s.espn_season, ctx.s.model_ask, ctx.s.model_daily, ctx.runner)
+        if not out["stop"]:                      # the playbook analyst: each team's named plays across its games
+            out["notes"] = breakdown.playbooks(ctx.conn, ctx.s.espn_season, ctx.s.model_daily, ctx.runner)["done"]
+        return out
     except Exception as e:
         log.warning("game breakdowns failed: %s", e)
         return {"done": 0, "left": 0, "failed": 0, "stop": str(e)[:120]}
+
+
+def _writeups(ctx, key) -> dict:
+    """Written breakdowns of finished games, every team (tracked teams first): where the named plays per game come from."""
+    from . import game_log, social_intel
+    import shutil
+    if not ctx.cache.get("reach_games") and not shutil.which("agent-reach"):     # no reader installed (dev PC, tests)
+        return {"games": 0, "left": 0, "added": [], "stop": "agent-reach is not installed"}
+    first = game_log.tracked(ctx.conn)
+    every = game_log.all_teams(ctx.conn, ctx.s.espn_season)
+    return social_intel.game_articles(ctx.conn, key, ctx.s.model_ask, first, ctx.s.espn_season, claude_runner=ctx.runner,
+                                      reach=ctx.cache.get("reach_games"),
+                                      every=[t for t in every if t not in first])
 
 
 def _film(ctx, key):
@@ -1071,7 +1093,7 @@ def _film(ctx, key):
                            claude_runner=ctx.runner, first=game_log.tracked(ctx.conn))
     arts = social_intel.season_articles(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach_web"), claude_runner=ctx.runner)
     social_intel.season_videos(ctx.conn, key, ctx.s.model_ask, claude_runner=ctx.runner, teams=arts["teams"])
-    garts = social_intel.game_articles(ctx.conn, key, ctx.s.model_ask, game_log.tracked(ctx.conn), ctx.s.espn_season, claude_runner=ctx.runner)
+    garts = _writeups(ctx, key)
     new_team = game_log.grow(ctx.conn) if not garts["left"] and not garts["stop"] else None   # backlog clear: add the next top team
     from . import playbook_kb as kb
     want = [r[0] for r in ctx.conn.execute("select label, count(*) n from film_items group by label order by n desc")]
@@ -1108,6 +1130,7 @@ def _film(ctx, key):
                        + (f", game by game now tracks {new_team}" if new_team else "")
                        + (f", {rejected} labels rejected by the verifier (table film_rejects)" if rejected else "")
                        + (f", {broke['done']} game breakdowns written ({broke['left']} left)" if broke["done"] else "")
+                       + (f", {broke['notes']} playbook reads" if broke.get("notes") else "")
                        + (f", breakdowns stopped: {broke['stop']}" if broke["stop"] else "")
                        + (f", {len(clash)} contradictions" if clash else "") + (f", stopped: {res['stop']}" if res["stop"] else ""))
     return {"games": res["games"], "labels": len(added), "article_labels": len(arts["added"]), "article_teams": arts["teams"],

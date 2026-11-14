@@ -736,6 +736,10 @@ function leanKey(label) {
         ${(p.beat || []).length ? p.beat.map(w => `<div class="bw"><div><b>${esc(w.area)}</b> <span class="muted">${esc(w.evidence)}</span></div>
           <div class="bx">${esc(w.exploit)}: ${(w.plays || []).map(x => `<button class="sc rep" data-play="${esc(x)}">${esc(x)}</button>`).join(" ")}${w.tradeoff ? ` <span class="muted">(trade-off, needs shooting)</span>` : ""}</div></div>`).join("")
           : `<div class="muted">No clear weakness in the numbers yet: nothing ranks in the league's worst seven.</div>`}</div>
+      ${p.analyst ? `<div class="pbs"><h4>Playbook analyst <span class="muted" style="font-weight:400">across their games</span></h4>
+        <div style="font-size:13px"><b>${esc(p.analyst.headline)}</b></div>
+        <ul style="list-style:none;margin:6px 0 0;padding:0;display:grid;gap:6px;font-size:13px;line-height:1.45">${p.analyst.notes.map(f =>
+          `<li>${{helped: "✅", hurt: "❌"}[f.effect] || "•"} ${esc(f.point)} <span class="muted">${esc(f.evidence)}</span></li>`).join("")}</ul></div>` : ""}
       <div class="pbs sets"><h4>Playbook: named sets <span class="muted" style="font-weight:400">reported in breakdowns</span></h4>
         ${(p.named_sets || []).filter(x => x.kind !== "coverage").length ? `<table class="pt"><thead><tr><th>Set / action</th><th class="r">Reported</th><th class="r">Est. success</th><th class="r">Pts/shot</th></tr></thead><tbody>
           ${p.named_sets.filter(x => x.kind !== "coverage").slice(0, 6).map(x => `<tr><td><button class="sc rep" data-play="${esc(x.label)}">${esc(x.label)}</button>${x.ato ? ' <span class="muted">ATO</span>' : ""}</td>

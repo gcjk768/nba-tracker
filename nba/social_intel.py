@@ -83,17 +83,18 @@ class Stop(Exception):
 
 class Reach:
     """Budgeted, spaced Agent Reach CLI wrapper. runner(cmd) -> (returncode, stdout) for tests."""
-    def __init__(self, runner=None, sleep=time.sleep, budget=None):
+    def __init__(self, runner=None, sleep=time.sleep, budget=None, spacing=None):
         self.runner = runner or _run
         self.sleep = sleep
         self.budget = {**BUDGET, **(budget or {})}
+        self.spacing = {**SPACING, **(spacing or {})}
         self.used = {k: 0 for k in BUDGET}
         self.last = {k: 0.0 for k in BUDGET}
 
     def __call__(self, action, *args):
         if self.used[action] >= self.budget[action]:
             raise Stop(f"{action} budget used")
-        wait = self.last[action] + SPACING[action] - time.monotonic()
+        wait = self.last[action] + self.spacing[action] - time.monotonic()
         if wait > 0:
             self.sleep(wait)
         self.used[action] += 1
@@ -323,7 +324,7 @@ def extract(text, game, url, title, model, runner=None, prompt="film.md", conn=N
 def run(conn, today: str, model: str, reach=None, claude_runner=None, days=3, first=()) -> dict:
     """One film-room pass over games from the last `days` US dates, games of the `first` teams before the rest
     (subtitles are scarce: YouTube rate-limits the home IP). Returns counts and the stop reason, if any."""
-    reach = reach or Reach()
+    reach = reach or Reach(budget={"read": 30})
     since = (date.fromisoformat(today) - timedelta(days=days)).isoformat()
     games = [dict(g) for g in conn.execute("""
         select g.*, coalesce(e.score, 0) ex from games g left join game_excitement e on e.game_id = g.game_id
@@ -331,7 +332,7 @@ def run(conn, today: str, model: str, reach=None, claude_runner=None, days=3, fi
           and g.game_id not in (select game_id from film_games where status='done')
         order by ex desc""", (since, today))]
     games.sort(key=lambda g: g["home"] not in first and g["away"] not in first)      # stable: excitement order kept within each group
-    added, stop = [], None
+    added, stop, captions = [], None, True
     try:
         for g in games:
             vids = []
@@ -349,16 +350,26 @@ def run(conn, today: str, model: str, reach=None, claude_runner=None, days=3, fi
                 if not pub or not (gd <= pub <= gd + timedelta(days=3)):
                     _video(conn, url, g["game_id"], "skipped: wrong date")
                     continue
-                subs = reach("subtitle", url, "--lang", "en,en-orig")
-                text = (subs or [{}])[0].get("text") if subs else None
+                text = None
+                if captions:
+                    try:
+                        subs = reach("subtitle", url, "--lang", "en,en-orig")
+                        text = (subs or [{}])[0].get("text") if subs else None
+                    except Stop as e:        # YouTube refuses captions after a few pulls from the home IP, or the budget is
+                        captions, stop = False, str(e)   # used: carry on with video descriptions, which are not limited
+                        log.info("film room: captions off for this pass (%s), using descriptions", stop)
+                how = "captions"
                 if not text:
-                    _video(conn, url, g["game_id"], "no subtitles")
-                    continue
+                    desc = ((meta or [{}])[0].get("text") or "") if meta else ""
+                    if len(desc.split()) < 80:
+                        _video(conn, url, g["game_id"], "no subtitles")
+                        continue
+                    text, how = f"{v.get('title') or ''}. {desc}", "description"
                 items = extract(text, g, url, v.get("title") or "", model, claude_runner, conn=conn)
                 with db.tx(conn):
                     for it in items:
                         _store(conn, g["game_id"], g["date"], it, url, v.get("author") or "")
-                _video(conn, url, g["game_id"], f"done: {len(items)} labels")
+                _video(conn, url, g["game_id"], f"done: {len(items)} labels ({how})")
                 added += [{**it, "game_id": g["game_id"]} for it in items]
             with db.LOCK:
                 conn.execute("insert or replace into film_games(game_id, status, checked) values (?, 'done', ?)", (g["game_id"], today))
@@ -454,30 +465,54 @@ def season_articles(conn, today: str, model: str, reach=None, claude_runner=None
 NOT_ARTICLE = ("youtube.com", "youtu.be", "reddit.com", "x.com", "twitter.com", "basketball-reference.com", "48index.com")
 
 
-GAME_BUDGET = {"web_search": 12, "web_read": 18}     # 6 games a night: 2 searches + up to 3 reads each
+GAME_BUDGET = {"web_search": 20, "web_read": 30}     # 10 games a pass: 2 searches + up to 3 reads each
+
+
+def host_yield(conn) -> dict:
+    """{host: named plays found per source read} from everything read so far. Team film-room blogs and breakdown
+    newsletters name plays; general recaps mostly do not (2026-11-14: 36 of 58 hosts had given nothing)."""
+    got = {}
+    for r in conn.execute("select url, status from film_videos where status like 'done:%' or status like 'reverified%'"):
+        m = re.search(r"done: (\d+) labels|reverified: (\d+)/", r["status"])
+        a = got.setdefault(_host(r["url"]), [0, 0])
+        a[0] += 1
+        a[1] += int(m.group(1) or m.group(2)) if m else 0
+    return {h: n / k for h, (k, n) in got.items()}
 
 
 def _won(g, t):
     return (g["home_pts"] > g["away_pts"]) == (g["home"] == t)
 
 
-def game_articles(conn, today: str, model: str, teams, season: int, reach=None, claude_runner=None, per_night=6) -> dict:
+def game_articles(conn, today: str, model: str, teams, season: int, reach=None, claude_runner=None, per_night=10, every=()) -> dict:
     """Write-ups of each finished game of the tracked teams (Exa search + Jina read via Agent Reach): the sets and
     coverages each side ran in that game and whether they worked. Two searches per game (this team's angle, the
     opponent's angle), up to 3 reads. Newest games first; each (game, team) is searched once, marked
     `art:<game_id>:<team>` in film_games."""
-    reach = reach or Reach(budget=GAME_BUDGET)
+    reach = reach or Reach(budget=GAME_BUDGET, spacing={"web_search": 8})    # bursts of ~10 searches got a 429 (2026-11-09)
     done = {r[0] for r in conn.execute("select game_id from film_games where game_id like 'art:%'")}
     todo = sorted(((dict(g), t) for t in teams for g in conn.execute(
         "select * from games where season=? and status='final' and source is not null and date < ? and ? in (home, away)",
         (season, today, t)) if f"art:{g['game_id']}:{t}" not in done), key=lambda x: x[0]["date"], reverse=True)
-    added, stop = [], None
+    # `every` = the other teams (the owner 2026-11-14: every match). Their games are searched from one side only, after the
+    # tracked teams' games of the same day; a write-up names both teams' plays anyway.
+    searched = {k.split(":")[1] for k in done} | {g["game_id"] for g, _ in todo}
+    for t in every:
+        for g in conn.execute("select * from games where season=? and status='final' and source is not null and date < ? and home=?",
+                              (season, today, t)):
+            if g["game_id"] not in searched:
+                searched.add(g["game_id"])
+                todo.append((dict(g), t))
+    todo.sort(key=lambda x: (x[0]["date"], x[1] in teams), reverse=True)
+    added, stop, good = [], None, host_yield(conn)
     try:
         for g, t in todo[:per_night]:
             opp, gd = g["away"] if t == g["home"] else g["home"], date.fromisoformat(g["date"])
             when, verb = f"{gd:%B} {gd.day}, {gd.year}", "lost to" if _won(g, t) else "beat"
-            items = (reach("web_search", f"{espn.NAMES[t]} vs {espn.NAMES[opp]} {when} film breakdown sets plays defense", "--limit", "6") or []) \
+            items = (reach("web_search", f"{espn.NAMES[t]} vs {espn.NAMES[opp]} {when} film room breakdown sets plays coverage", "--limit", "8") or []) \
                 + (reach("web_search", f"how the {espn.NAMES[opp]} {verb} the {espn.NAMES[t]} {when} coach postgame", "--limit", "5") or [])
+            # Only 3 are read per game: sites that have named plays before go first, sites never read next, proven duds last.
+            items.sort(key=lambda it: -good.get(_host(it.get("url") or ""), 0.5))
             used = 0
             for it in items:
                 url, title = it.get("url") or "", it.get("title") or ""

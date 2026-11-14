@@ -68,6 +68,7 @@ create table if not exists film_items(
 create table if not exists film_videos(url text primary key, game_id text, status text, checked text);
 create table if not exists play_videos(label text primary key, url text, title text, channel text, duration int, checked text);
 create table if not exists film_games(game_id text primary key, status text, checked text);
+create table if not exists playbook_notes(team text primary key, hash text, created text, body text);
 create table if not exists game_breakdowns(game_id text, team text, hash text, created text, body text,
   primary key(game_id, team));
 

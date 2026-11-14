@@ -47,6 +47,10 @@ asyncio loop; pipelines run one at a time in a worker thread (`nba/scheduler.py`
   (each reads only its own facts, in parallel) and a head coach who writes the verdict from their findings and the
   points-of-margin split. Prompts `nba/prompts/breakdown_*.md`. Code drops anything with a number that is not in the
   facts. Table `game_breakdowns`; shown as "Why" on the game card via `nba/web.py` `game_log_team`. `python -m nba breakdown [N]`.
+  All 30 teams, tracked first. A fifth agent, the playbook analyst (`breakdown.playbooks`, `nba/prompts/breakdown_playbook.md`),
+  reads each team's named plays across games into table `playbook_notes` (shown on the playbook card). Named plays per
+  game come from `nba/social_intel.py` `game_articles` (write-ups, every team, also run by the daily job) and `run`
+  (YouTube captions, falling back to the video description when captions are refused).
 - `nba/game_log.py` — focus teams (LAL, SA, PHI, OKC) game by game: plays run, defense scheme played (inferred per game,
   or reported by a write-up of that game via `social_intel.game_articles`), counters, plays allowed; `web.game_log`.
 - `nba/web.py` + `nba/dashboard.html` — animated dashboard in pages (navbar, `#today` `#games` `#playbooks` `#teams` `#race` `#model`) on NAS port 8795 (team drawer at `/team/<CODE>.json`) (title race replay, odds over time, power

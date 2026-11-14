@@ -15,6 +15,12 @@ FOCUS = ("LAL", "SA", "PHI", "OKC")      # the owner 2026-11-10: Lakers, Spurs, 
 MAX_TEAMS = 10   # ~10 teams play ~5 games a night: the most the nightly write-up search (5 games) keeps up with
 
 
+def all_teams(conn, season) -> list[str]:
+    """Every team with a game this season, A to Z."""
+    return [r[0] for r in conn.execute("select home from games where season=? union select away from games where season=? order by 1",
+                                       (season, season))]
+
+
 def tracked(conn) -> list[str]:
     """Tracked teams: the pinned four, then top teams added one at a time by grow()."""
     return json.loads(db.meta_get(conn, "game_log_teams") or "null") or list(FOCUS)

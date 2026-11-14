@@ -196,9 +196,10 @@ def game_log(ctx) -> dict:
     """Focus teams, game by game: plays run, defense played, reported sets per game. Cached like the other views."""
     from . import game_log as gl
     tracked = gl.tracked(ctx.conn)
-    k = ("game_log", _key(ctx.conn), ctx.conn.execute("select count(*) from film_items").fetchone()[0], tuple(tracked))
+    teams = tracked + [t for t in gl.all_teams(ctx.conn, ctx.s.espn_season) if t not in tracked]
+    k = ("game_log", _key(ctx.conn), ctx.conn.execute("select count(*) from film_items").fetchone()[0], tuple(teams))
     if k not in _CACHE:
-        _CACHE[k] = gl.build(ctx.conn, ctx.s.espn_season, tracked)
+        _CACHE[k] = gl.build(ctx.conn, ctx.s.espn_season, teams)     # every team (the owner 2026-11-14), tracked ones first
     return _CACHE[k]
 
 
@@ -272,7 +273,7 @@ def _team_film(ctx, team):
 
 def playbooks(ctx, styles: list[dict]) -> list[dict]:
     """One card per team: what they run most on offense, after timeouts, on defense, and named sets reported."""
-    from . import social_intel
+    from . import breakdown, social_intel
     P, A = profiles(ctx), ato_profiles(ctx)
     lo, ld = P["_league"]["offense"], P["_league"]["defense"]
     out = []
@@ -299,6 +300,7 @@ def playbooks(ctx, styles: list[dict]) -> list[dict]:
                         "forced_tov_pct": P[t]["forced_tov_pct"],
                         "top_blocker": P[t]["top_blocker"]["name"] if P[t]["top_blocker"]["per_game"] >= 1.0 else None},
             "named": pb["counts"], "named_n": len(pb["recent"]),
+            "analyst": breakdown.playbook_notes(ctx.conn, t),     # the playbook analyst's read across games, or None
             "beat": weaknesses_all(ctx).get(t, [])[:3],
             "named_sets": named_sets(ctx, t), "film_videos": _team_film(ctx, t), "def_schemes": defense_schemes(ctx, t),
             "top_plays": plays_all(ctx)[t]["offense"][:5], "top_allowed": plays_all(ctx)[t]["defense"][:3],

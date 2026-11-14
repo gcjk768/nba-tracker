@@ -64,6 +64,14 @@ def main(argv: list[str]) -> int:
         from . import breakdown
         print(json.dumps(breakdown.run(ctx.conn, ctx.s.espn_season, ctx.s.model_ask, ctx.s.model_daily, ctx.runner,
                                        **({"limit": int(argv[1])} if len(argv) > 1 else {}))))
+    elif cmd == "playbooks":            # python -m nba playbooks [N]: the playbook analyst's read of N teams
+        from . import breakdown
+        print(json.dumps(breakdown.playbooks(ctx.conn, ctx.s.espn_season, ctx.s.model_daily, ctx.runner,
+                                             **({"limit": int(argv[1])} if len(argv) > 1 else {}))))
+    elif cmd == "writeups":             # python -m nba writeups: one pass of game write-ups (named plays per game)
+        from . import jobs as j
+        r = j._writeups(ctx, ctx.now_sgt().date().isoformat())
+        print(json.dumps({"games": r["games"], "left": r["left"], "labels": len(r["added"]), "stop": r["stop"]}))
     elif cmd == "backtest":
         from . import backtest
         print(json.dumps(backtest.run(ctx), indent=1, default=str))

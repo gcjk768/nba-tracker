@@ -13,7 +13,13 @@ def staff(calls, offence=None, coach=None):
     """Fake claude for the four agents. The role is read from the system prompt; each quotes a number from its own facts."""
     def runner(cmd, stdin, timeout):
         prompt, facts = cmd[cmd.index("--system-prompt") + 1], json.loads(stdin)
-        role = next(r for r in ("offence", "defence", "player", "head coach") if r in prompt.split(".")[0])
+        role = next(r for r in ("offence", "defence", "playbook", "player", "head coach") if r in prompt.split(".")[0])
+        if role == "playbook":
+            calls.append((role, facts))
+            x = facts["named_plays_and_coverages"][0]
+            return _reply(cmd, {"headline": f"{facts['team']} lean on {x['name']}", "notes": [
+                {"point": f"{x['name']} is working.", "evidence": f"reported in {x['times_reported']} breakdown", "effect": "helped"},
+                {"point": "They score 999 a night.", "evidence": "999 points", "effect": "helped"}]})
         calls.append((role, facts))
         if role == "head coach":
             return _reply(cmd, coach(facts) if coach else {
@@ -71,3 +77,20 @@ def test_claude_down_stores_nothing_and_stops(conn):
     down = lambda cmd, stdin, timeout: subprocess.CompletedProcess(cmd, 1, "", "Not logged in")
     res = bd.run(conn, 2027, "fast", "smart", down, teams=["PHI"])
     assert res["done"] == 0 and res["stop"].startswith("claude unavailable") and bd.stored(conn, "PHI") == {}
+
+
+def test_playbook_analyst_follows_named_plays_across_games_and_only_when_there_are_some(conn):
+    _setup(conn)
+    calls = []
+    assert bd.playbooks(conn, 2027, "smart", staff(calls)) == {"done": 0, "left": 0, "stop": None} and not calls   # nothing named yet
+    gid = conn.execute("select game_id from games").fetchone()[0]
+    conn.execute("""insert into film_items(game_id, date, team, kind, label, summary, url, impact, effect) values
+                    (?, '2026-11-08', 'PHI', 'set', 'horns', 'horns for Embiid', 'u', 'worked', 'got Embiid to the line'),
+                    ('', '2026-11-01', 'PHI', 'coverage', 'drop', 'they sit in drop', 'u2', '', '')""", (gid,))
+    assert bd.playbooks(conn, 2027, "smart", staff(calls))["done"] == 1
+    F = calls[-1][1]
+    horns = next(x for x in F["named_plays_and_coverages"] if x["name"] == "horns")
+    assert horns["games"][0]["worked"] == "worked" and horns["games"][0]["result"] in ("won", "lost")
+    note = bd.playbook_notes(conn, "PHI")
+    assert note["headline"].startswith("PHI lean on ") and len(note["notes"]) == 1 and note["notes"][0]["point"].endswith(" is working.")   # 999 dropped
+    assert bd.playbooks(conn, 2027, "smart", staff(calls))["done"] == 0 and bd.playbook_notes(conn, "CHI") is None    # unchanged: no call

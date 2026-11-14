@@ -202,7 +202,7 @@ def test_verifier_error_stores_nothing_and_the_pass_goes_on(conn):
     res = si.run(conn, "2026-11-10", "m", reach=si.Reach(FakeYT(), sleep=lambda s: None), claude_runner=broken)
     assert res["stop"] is None and res["added"] == [] and broken.calls == 2                 # analyst.run's one retry, then give up
     assert conn.execute("select count(*) from film_items").fetchone()[0] == 0
-    assert conn.execute("select status from film_videos where url='https://youtu.be/new1'").fetchone()[0] == "done: 0 labels"
+    assert conn.execute("select status from film_videos where url='https://youtu.be/new1'").fetchone()[0] == "done: 0 labels (captions)"
     assert {(r["label"], r["reason"]) for r in si.rejects(conn)} == {("horns", "verifier failed"), ("switch", "verifier failed")}
 
 
@@ -241,8 +241,29 @@ def test_reverify_moves_unsupported_old_labels_and_leaves_unreadable_sources(con
     assert len(runner.seen) == seen                                      # the checked source is not paid for twice
 
 
+def test_captions_refused_falls_back_to_the_video_description(conn):
+    _setup(conn)
+
+    class Described(FakeYT):
+        def __call__(self, cmd):
+            if cmd[2] == "read" and cmd[3].endswith("new1"):
+                self.calls.append("read")
+                return 0, json.dumps({"ok": True, "items": [{"published_at": "2026-11-09", "text": TRANSCRIPT}]})
+            return super().__call__(cmd)
+    res = si.run(conn, "2026-11-10", "m", reach=si.Reach(Described(rate_limit_on="subtitle"), sleep=lambda s: None), claude_runner=claude_ok)
+    assert "RATE_LIMITED" in res["stop"] and {(x["team"], x["label"]) for x in res["added"]} == {("PHI", "horns"), ("CHI", "switch")}
+    assert conn.execute("select status from film_videos where url='https://youtu.be/new1'").fetchone()[0] == "done: 2 labels (description)"
+
+
 def test_film_verify_off_is_the_old_single_call(conn, monkeypatch):
     monkeypatch.setenv("FILM_VERIFY", "off")
     runner = verified(_extractor, lambda l, text: {"supported": False})
     assert _labels(runner, conn) == {("PHI", "horns"), ("CHI", "switch")}
     assert runner.seen == [] and si.rejects(conn) == []
+
+
+def test_host_yield_ranks_sites_by_named_plays_per_source(conn):
+    for url, status in (("https://www.celticsblog.com/a", "done: 6 labels (article)"), ("https://www.celticsblog.com/b", "reverified: 2/3 kept"),
+                        ("https://recaps.example/x", "done: 0 labels (article)"), ("https://recaps.example/y", "too short")):
+        si._video(conn, url, "", status)
+    assert si.host_yield(conn) == {"celticsblog.com": 4.0, "recaps.example": 0.0}

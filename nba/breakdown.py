@@ -16,11 +16,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Literal
 
-from . import analyst, db, game_log, insights as ins
+from . import analyst, db, game_log, insights as ins, playbook_kb as kb, plays, schemes
 
 log = logging.getLogger(__name__)
 ROLES = ("offence", "defence", "players")
-MAX_PER_RUN = int(os.environ.get("BREAKDOWN_MAX", 12))      # team-games per run; 4 claude calls each
+MAX_PER_RUN = int(os.environ.get("BREAKDOWN_MAX", 30))      # team-games per run; 4 claude calls each
+MAX_NOTES = int(os.environ.get("PLAYBOOK_NOTES_MAX", 10))   # team playbook reads per run; 1 claude call each
 VERSION = 2              # bump to redo every stored breakdown after a prompt or facts change
 
 
@@ -44,6 +45,11 @@ class Verdict(analyst._M):
     headline: str
     reasons: list[Reason]
     next_time: str = ""
+
+
+class Playbook(analyst._M):
+    headline: str
+    notes: list[Finding]
 
 
 class Down(Exception):
@@ -199,9 +205,10 @@ def stored(conn, team) -> dict:
 def run(conn, season, fast, smart, runner=None, limit=MAX_PER_RUN, teams=None) -> dict:
     """Break down the newest finished games of the tracked teams that have no breakdown yet, or whose facts changed
     (a write-up of that game arrived). Returns counts; stops quietly when claude is down."""
-    teams = list(teams or game_log.tracked(conn))
-    every = sorted({r[0] for r in conn.execute("select home from games where season=?", (season,))} | set(teams))
-    G = game_log.build(conn, season, every)
+    every = game_log.all_teams(conn, season)
+    first = game_log.tracked(conn)
+    teams = list(teams or first + [t for t in every if t not in first])      # every team; the tracked ones first
+    G = game_log.build(conn, season, sorted(set(every) | set(teams)))
     have = {(r["game_id"], r["team"]): r["hash"] for r in conn.execute("select game_id, team, hash from game_breakdowns")}
     todo = []
     for t in teams:
@@ -214,7 +221,7 @@ def run(conn, season, fast, smart, runner=None, limit=MAX_PER_RUN, teams=None) -
                 h = hashlib.sha1(json.dumps([VERSION, named]).encode()).hexdigest()[:16]
                 if have.get((g["game_id"], t)) != h:
                     todo.append((g["date"], t, g["game_id"], h, F))
-    todo.sort(key=lambda x: x[0], reverse=True)
+    todo.sort(key=lambda x: (x[0], x[1] in first), reverse=True)             # newest first; tracked teams first on a day
     out = {"done": 0, "left": max(0, len(todo) - limit), "failed": 0, "stop": None}
     for d, t, gid, h, F in todo[:limit]:
         try:
@@ -231,4 +238,86 @@ def run(conn, season, fast, smart, runner=None, limit=MAX_PER_RUN, teams=None) -
         out["done"] += 1
     if out["done"] or out["stop"] or out["failed"]:
         log.info("game breakdowns: %s", out)
+    return out
+
+
+# ---------- the playbook analyst: a team's named sets and coverages across its games ----------
+
+def playbook_facts(conn, season, team, G, S, lg) -> dict | None:
+    """What has been reported about this team's named plays and coverages, game by game, next to how its shots have
+    gone all season. None when no breakdown has named anything for the team yet (nothing to follow)."""
+    games = {g["game_id"]: g for g in G.get(team, {}).get("games", [])}
+    named = {}
+    for r in conn.execute("select * from film_items where team=? order by date", (team,)):
+        x = named.setdefault((r["label"], r["kind"]), {"name": r["label"], "type": "coverage (defence)" if r["kind"] == "coverage" else
+                                                       "offensive system" if r["kind"] == "system" else "offensive play",
+                                                       "what_it_is": kb.describe(r["label"])["desc"], "times_reported": 0, "games": []})
+        x["times_reported"] += 1
+        g = games.get(r["game_id"])
+        if g:
+            x["games"].append({"date": g["date"], "opponent": g["opp"], "result": "won" if g["result"] == "W" else "lost",
+                               "score": f"{g['pts']}-{g['opp_pts']}", "worked": r["impact"] or "not stated", "effect": r["effect"] or ""})
+        elif len(x.setdefault("from_season_pieces", [])) < 2:
+            x["from_season_pieces"].append(" ".join((r["summary"] or "").split())[:200])
+    if not named:
+        return None
+    off = {r["play"]: r for r in plays.team_plays(S, team, lg, "offense")}
+    for x in named.values():                     # how the shot types this play usually ends in have gone, all season
+        used = [off[k] for k in kb.SET_TO_PLAYS.get(x["name"], []) if k in off] if x["type"] != "coverage (defence)" else []
+        att = sum(u["att"] for u in used)
+        if att >= 20:
+            x["season_estimate_from_its_usual_shots"] = {
+                "made_pct": _pct(sum(u["success"] * u["att"] for u in used) / att),
+                "league_made_pct": _pct(sum(u["lg_success"] * u["att"] for u in used) / att), "attempts": att}
+    rec = [g["result"] for g in games.values()]
+    return {"team": team, "record": f"{rec.count('W')}-{rec.count('L')}", "games_played": len(rec),
+            "named_plays_and_coverages": sorted(named.values(), key=lambda x: -x["times_reported"])[:14],
+            "how_its_shots_come_this_season": [_play(r) for r in plays.team_plays(S, team, lg, "offense")[:5]],
+            "what_opponents_score_on_this_season": [_play(r) for r in plays.team_plays(S, team, lg, "defense")[:4]]}
+
+
+def playbook_notes(conn, team) -> dict | None:
+    r = conn.execute("select body from playbook_notes where team=?", (team,)).fetchone()
+    return json.loads(r["body"]) if r else None
+
+
+def playbooks(conn, season, model, runner=None, limit=MAX_NOTES) -> dict:
+    """The playbook analyst's read of each team that has named plays, redone when a new label or a new game arrives.
+    Teams whose facts changed longest ago go first. Same number rule as the game breakdowns."""
+    every = game_log.all_teams(conn, season)
+    G = game_log.build(conn, season, every)
+    S = schemes.shots(conn, season)
+    lg = plays.league(S)
+    have = {r["team"]: (r["hash"], r["created"]) for r in conn.execute("select team, hash, created from playbook_notes")}
+    todo = []
+    for t in every:
+        F = playbook_facts(conn, season, t, G, S, lg)
+        if F:
+            h = hashlib.sha1(json.dumps([VERSION, F["games_played"], [(x["name"], x["times_reported"], x["games"])
+                                                                       for x in F["named_plays_and_coverages"]]]).encode()).hexdigest()[:16]
+            if have.get(t, ("", ""))[0] != h:
+                todo.append((have.get(t, ("", ""))[1], t, h, F))
+    todo.sort(key=lambda x: x[0])                                   # never written first, then the oldest
+    out = {"done": 0, "left": max(0, len(todo) - limit), "stop": None}
+    for _, t, h, F in todo[:limit]:
+        allowed, extra, res = numbers(F), {}, None
+        try:
+            for _ in range(2):
+                res = _ask("breakdown_playbook.md", {**F, **extra}, model, runner, Playbook)
+                kept, bad = clean(res.notes[:5] if res else [], allowed)
+                if kept or not bad:
+                    break
+                extra = {"your_last_reply_was_rejected": f"it used numbers that are not in the facts: {', '.join(bad[:8])}. Use only numbers you were given."}
+        except Down as e:
+            out["stop"] = f"claude unavailable ({e})"
+            break
+        if not res or not kept:
+            continue
+        body = {"headline": f"{t} playbook" if invented(res.headline, allowed) else res.headline, "notes": [f.model_dump() for f in kept]}
+        with db.tx(conn):
+            conn.execute("insert or replace into playbook_notes(team, hash, created, body) values (?,?,?,?)",
+                         (t, h, datetime.now(timezone.utc).isoformat(timespec="seconds"), json.dumps(body, ensure_ascii=False)))
+        out["done"] += 1
+    if out["done"] or out["stop"]:
+        log.info("playbook notes: %s", out)
     return out
