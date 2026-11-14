@@ -1,8 +1,30 @@
 ---
 tags: [active]
-updated: 2026-11-10
+updated: 2026-11-14
 ---
 # Changelog
+
+## 2026-11-14
+- Film room: independent verifier before a label is stored (after the 2026-11-10 hand re-check of 34 labels: LAL
+  "5-out" from a one-lineup remark, OKC "drop" not in its source, "scramble" filed as offense). Every chunk that gave
+  at least one label gets a second Haiku call (`nba/prompts/film_verify.md`, through `analyst.run` with the new
+  `analyst.Checks` schema, so it has the usual one retry). It sees the chunk and the labels only (team, name, side,
+  scope = game / season / system), never the extractor's summary, and answers per label: supported, a verbatim quote,
+  scope ok, side ok; unsure = no. Code guard in `social_intel.verify`: the quote (>= 4 words; case, spacing and curly
+  quotes ignored) must be in the chunk, whatever the verifier said. A label that fails any check is dropped, not
+  downgraded (a system name that is not the base offense was already dropped by `normalise`). Rejections are
+  appended to the new table `film_rejects` (created, url, title, team, label, kind, reason, quote), created by
+  `nba/social_intel.py` like `team_videos` (`nba/db.py` untouched), logged at INFO, and counted in the 🎬 film room
+  Activity line. Verifier replies with bad JSON twice: that chunk's labels are not stored (reason `verifier failed`)
+  and the pass goes on. `FILM_VERIFY=off` in `.env` gives the old single-call behaviour (default on). Cost: at most
+  one extra Haiku call per extractor call. Deployed 2026-11-14.
+- Fix: a film source was lost for good when Claude was down. Root cause: `extract` swallowed the CLI failure and
+  returned no labels, so the caller filed the source `done: 0 labels` and never read it again (seen 2026-11-13/14:
+  the API key hit its Console spend limit and the container has no fallback token, so every call said "Not logged
+  in"). Now a CLI failure in the extractor, or no reply at all from the verifier, raises `Stop("claude
+  unavailable…")`: the pass ends, the source stays unread and is tried again the next night.
+- Fix (made on the NAS by NAS Doctor at 05:51, adopted here): `db.meta_get` reads under `LOCK` like every other
+  access to the shared connection.
 
 ## 2026-11-11
 - Docs only: README rewritten around the offence/defence play analysis (why a team won or lost) with a step table, and a draw.io architecture diagram added at `docs/architecture.drawio.svg`. Repo made public the same day.

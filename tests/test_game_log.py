@@ -1,7 +1,7 @@
 import json
 
 from nba import game_log, social_intel as si
-from test_film import _setup, claude_ok
+from test_film import _setup, claude_ok, verified
 
 ARTICLE = ("Philadelphia leaned on horns sets for Embiid and Chicago spent long stretches in a 2-3 zone. " * 30)
 
@@ -46,6 +46,8 @@ def claude_impact(cmd, stdin, timeout):
                      {"team": "CHI", "label": "switch", "kind": "coverage", "impact": "maybe", "effect": "", "who": "", "summary": "Chicago switched."}]}
     return subprocess.CompletedProcess(cmd, 0, json.dumps({"result": json.dumps(out)}), "")
 
+
+claude_impact = verified(claude_impact)
 
 def test_game_articles_tie_labels_to_the_game_and_search_each_game_once(conn):
     _setup(conn)

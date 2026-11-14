@@ -13,6 +13,7 @@ import time
 from datetime import date, datetime, timedelta, timezone
 
 from . import analyst, db, espn
+from .config import _on
 
 log = logging.getLogger(__name__)
 BUDGET = {"search": 30, "read": 12, "subtitle": 6, "web_search": 8, "web_read": 10}
@@ -151,10 +152,83 @@ def _date(s):
         return None
 
 
-def extract(text, game, url, title, model, runner=None, prompt="film.md") -> list[dict]:
-    """claude -p (cheap model): named sets / coverages only, strict JSON, validated and normalised."""
+REJECTS = """
+create table if not exists film_rejects(id integer primary key, created text, url text, title text, team text, label text,
+  kind text, reason text, quote text);
+"""
+MIN_QUOTE_WORDS = 4      # a one-word "quote" ("drop") is in every chunk and proves nothing
+_QUOTES = str.maketrans("\u2018\u2019\u201c\u201d", "''\"\"")
+
+
+def _flat(s):
+    """What "the quote is in the chunk" compares: lower case, single spaces, straight quotes."""
+    return " ".join(str(s).translate(_QUOTES).lower().split())
+
+
+def verify(chunk, items, game, model, runner=None, season=False) -> tuple[list[dict], list[tuple]]:
+    """Second, independent claude -p call on the same chunk (prompts/film_verify.md). It sees the labels only (team,
+    name, side, scope), never the extractor's summary. A label is kept when the verifier says the text supports it,
+    its scope and its side, AND its quote really is in the chunk. Returns (kept, [(item, reason, quote)]).
+    Verifier down or bad JSON after analyst.run's retry: nothing is kept (unverified = not stored), never raises."""
+    user = {"text": chunk, "labels": [
+        {"id": i, "team": it["team"], "team_name": espn.NAMES.get(it["team"]), "label": it["label"],
+         "means": _KB.get(it["label"], ("", ""))[1], "side": "defence" if it["kind"] == "coverage" else "offence",
+         "scope": "system" if it["kind"] == "system" else "season" if season else "game"} for i, it in enumerate(items)]}
+    if not season:
+        user["game"] = {"date": game["date"], "home_name": espn.NAMES.get(game["home"]), "away_name": espn.NAMES.get(game["away"])}
+    try:
+        res, raw = analyst.run("film_verify.md", json.dumps(user), model, schema=analyst.Checks, **({"runner": runner} if runner else {}))
+    except Exception as e:
+        log.warning("film verifier failed: %s", e)
+        res, raw = None, "x"
+    if res is None and not raw:                            # no reply at all, twice: the CLI is down, see extract()
+        raise Stop("claude unavailable: the film verifier got no reply")
+    if res is None:
+        return [], [(it, "verifier failed", "") for it in items]
+    checks, flat, kept, bad = {c.id: c for c in res.checks}, _flat(chunk), [], []
+    for i, it in enumerate(items):
+        c = checks.get(i)
+        q = _flat(c.quote) if c else ""
+        # A failed scope or side is dropped, not downgraded: normalise() already refuses a system name that is not the
+        # base offense (LAL "5-out", 2026-11-10), and flipping the side would be this code making a claim of its own.
+        reason = ("no verdict" if not c else "not supported by the text" if not c.supported
+                  else "quote not in the source" if len(q.split()) < MIN_QUOTE_WORDS or q not in flat
+                  else "scope not supported" if not c.scope_ok else "side not supported" if not c.side_ok else "")
+        if reason:
+            bad.append((it, reason, c.quote if c else ""))
+        else:
+            kept.append(it)
+    return kept, bad
+
+
+def _reject(conn, rejected):
+    """Append-only audit of what the verifier threw out (table film_rejects). Best effort."""
+    for it, reason, _ in rejected:
+        log.info("film label rejected: %s %s (%s): %s · %s", it["team"], it["label"], it["kind"], reason, it["url"])
+    if conn is None or not rejected:
+        return
+    try:
+        with db.LOCK:
+            conn.executescript(REJECTS)
+            conn.executemany("insert into film_rejects(created, url, title, team, label, kind, reason, quote) values (?,?,?,?,?,?,?,?)",
+                             [(datetime.now(timezone.utc).isoformat(timespec="seconds"), it["url"], it["title"], it["team"], it["label"],
+                               it["kind"], reason, " ".join(quote.split())[:200]) for it, reason, quote in rejected])
+    except Exception as e:
+        log.warning("film_rejects write failed: %s", e)
+
+
+def rejects(conn, limit=50) -> list[dict]:
+    """Newest rejected labels, for the audit."""
+    with db.LOCK:
+        conn.executescript(REJECTS)
+    return [dict(r) for r in conn.execute("select * from film_rejects order by id desc limit ?", (limit,))]
+
+
+def extract(text, game, url, title, model, runner=None, prompt="film.md", conn=None) -> list[dict]:
+    """claude -p (cheap model): named sets / coverages only, strict JSON, validated and normalised, then checked by
+    verify() chunk by chunk (FILM_VERIFY=off skips that). Rejected labels go to film_rejects when `conn` is given."""
     words = text.split()
-    found = []
+    found, rejected = [], []
     for i in range(0, min(len(words), 18000), 6000):       # <= 3 chunks per video
         chunk = " ".join(words[i:i + 6000])
         user = json.dumps({"game": {"date": game["date"], "home": game["home"], "away": game["away"],
@@ -164,9 +238,15 @@ def extract(text, game, url, title, model, runner=None, prompt="film.md") -> lis
             raw = analyst.call((analyst.PROMPTS / prompt).read_text(encoding="utf-8"), user, model,
                                **({"runner": runner} if runner else {}))
             data = analyst.extract_json(raw) if "{" in raw else {"items": []}
+        except RuntimeError as e:
+            # The CLI itself failed (not signed in, usage limit), so every other source would fail too. Stop the pass
+            # BEFORE the caller marks this source as read: it used to be filed "done: 0 labels" and never read again
+            # (2026-11-13/14, API key at its spend limit and no fallback token in the container).
+            raise Stop(f"claude unavailable: {str(e)[:160]}") from e
         except Exception as e:
             log.warning("film extraction failed for %s: %s", url, e)
             continue
+        got = []
         for x in data.get("items", []):
             team = espn.team_code(str(x.get("team", "")))
             label, kind = normalise(str(x.get("label", "")), x.get("kind"))
@@ -174,16 +254,21 @@ def extract(text, game, url, title, model, runner=None, prompt="film.md") -> lis
                 continue
             if not kind:
                 continue
-            found.append({"team": team, "label": label, "kind": kind, "who": str(x.get("who", ""))[:80], "ato": int(bool(x.get("ato"))),
+            got.append({"team": team, "label": label, "kind": kind, "who": str(x.get("who", ""))[:80], "ato": int(bool(x.get("ato"))),
                           "impact": x.get("impact") if x.get("impact") in ("worked", "failed") else "",
                           "effect": " ".join(str(x.get("effect", "")).split())[:120],
                           "summary": " ".join(str(x.get("summary", "")).split())[:300], "url": url, "title": title[:150]})
+        if got and _on("FILM_VERIFY"):
+            got, bad = verify(chunk, got, game, model, runner, season=prompt == "film_season.md")
+            rejected += bad
+        found += got
     seen, out = set(), []
     for f in found:
         k = (f["team"], f["label"])
         if k not in seen:
             seen.add(k)
             out.append(f)
+    _reject(conn, [r for r in rejected if (r[0]["team"], r[0]["label"]) not in seen])    # kept from another chunk: not a reject
     return out
 
 
@@ -221,7 +306,7 @@ def run(conn, today: str, model: str, reach=None, claude_runner=None, days=3, fi
                 if not text:
                     _video(conn, url, g["game_id"], "no subtitles")
                     continue
-                items = extract(text, g, url, v.get("title") or "", model, claude_runner)
+                items = extract(text, g, url, v.get("title") or "", model, claude_runner, conn=conn)
                 with db.tx(conn):
                     for it in items:
                         _store(conn, g["game_id"], g["date"], it, url, v.get("author") or "")
@@ -306,7 +391,7 @@ def season_articles(conn, today: str, model: str, reach=None, claude_runner=None
                     _video(conn, url, "", "too short")
                     continue
                 game = {"date": today, "home": t, "away": t}
-                found = [f for f in extract(text, game, url, it.get("title") or "", model, claude_runner, prompt="film_season.md")
+                found = [f for f in extract(text, game, url, it.get("title") or "", model, claude_runner, prompt="film_season.md", conn=conn)
                          if f["team"] == t]
                 with db.tx(conn):
                     for f in found:
@@ -358,7 +443,7 @@ def game_articles(conn, today: str, model: str, teams, season: int, reach=None, 
                 if len(text.split()) < 200:
                     _video(conn, url, g["game_id"], "too short")
                     continue
-                found = extract(text, g, url, title, model, claude_runner)
+                found = extract(text, g, url, title, model, claude_runner, conn=conn)
                 with db.tx(conn):
                     for f in found:
                         _store(conn, g["game_id"], g["date"], f, url, _host(url))
@@ -486,7 +571,7 @@ def season_videos(conn, today: str, model: str, reach=None, claude_runner=None, 
                     continue
                 text = f"{it.get('title', '')}. {meta.get('text') or ''}"
                 labels = [f for f in extract(text, {"date": today, "home": t, "away": t}, url, it.get("title") or "", model,
-                                             claude_runner, prompt="film_season.md") if f["team"] == t]
+                                             claude_runner, prompt="film_season.md", conn=conn) if f["team"] == t]
                 with db.tx(conn):
                     conn.execute("insert or replace into team_videos(team, url, title, channel, published, labels) values (?,?,?,?,?,?)",
                                  (t, url, (it.get("title") or "")[:150], it.get("author") or "", pub.isoformat(), len(labels)))

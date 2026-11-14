@@ -106,6 +106,18 @@ class Verdict(_M):
     summary: list[str] = []          # the 3-5 line verdict for the digest
 
 
+class Check(_M):                     # film room verifier (prompts/film_verify.md): anything left out counts as "no"
+    id: int
+    supported: bool = False
+    quote: str = ""
+    scope_ok: bool = False
+    side_ok: bool = False
+
+
+class Checks(_M):
+    checks: list[Check]
+
+
 def _cmd(prompt: str, model: str):
     return ["claude", "-p", "--bare", "--output-format", "json", "--model", model, "--tools", "",
             "--no-session-persistence", "--system-prompt", prompt]
@@ -135,14 +147,14 @@ def call(prompt: str, user: str, model: str, runner=_default_runner, timeout=600
     return out.get("result", "")
 
 
-def run(prompt_name: str, summary_json: str, model: str, runner=_default_runner) -> tuple[Verdict | None, str]:
+def run(prompt_name: str, summary_json: str, model: str, runner=_default_runner, schema=Verdict) -> tuple[BaseModel | None, str]:
     prompt = (PROMPTS / prompt_name).read_text(encoding="utf-8")
     user = summary_json
     raw = ""
     for attempt in range(2):
         try:
             raw = call(prompt, user, model, runner)
-            return Verdict.model_validate(extract_json(raw)), raw
+            return schema.model_validate(extract_json(raw)), raw
         except (ValidationError, ValueError, json.JSONDecodeError) as e:
             log.warning("analyst output invalid (attempt %d): %s", attempt + 1, str(e)[:300])
             user = summary_json + "\n\nYOUR PREVIOUS REPLY WAS INVALID: " + str(e)[:800] + \

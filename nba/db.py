@@ -122,7 +122,8 @@ def upsert(c, table, row: dict):
 
 
 def meta_get(c, k, default=None):
-    r = c.execute("select v from meta where k=?", (k,)).fetchone()
+    with LOCK:
+        r = c.execute("select v from meta where k=?", (k,)).fetchone()
     return r[0] if r else default
 
 

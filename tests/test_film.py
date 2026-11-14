@@ -1,6 +1,8 @@
 import json
 import subprocess
 
+import pytest
+
 from nba import collector, social_intel as si
 from test_collector import FakeClient
 
@@ -31,12 +33,31 @@ class FakeYT:
         return 1, "{}"
 
 
-def claude_ok(cmd, stdin, timeout):
+def _extractor(cmd, stdin, timeout):
     out = {"items": [{"team": "PHI", "label": "Horns", "kind": "set", "who": "", "summary": "Philly ran horns for Embiid."},
                      {"team": "CHI", "label": "switch", "kind": "coverage", "who": "", "summary": "Chicago switched."},
                      {"team": "BOS", "label": "drop", "kind": "coverage", "who": "", "summary": "Wrong game."},
                      {"team": "CHI", "label": "nonsense", "kind": "vibes", "who": "", "summary": "x"}]}
     return subprocess.CompletedProcess(cmd, 0, json.dumps({"result": json.dumps(out)}), "")
+
+
+def verified(extractor, check=None):
+    """Fake claude for both film calls: the extractor's reply, and for the verifier call (stdin has "labels") one check
+    per label: check(label, text) -> dict, default = supported, with a quote that really is in the text."""
+    def runner(cmd, stdin, timeout):
+        j = json.loads(stdin)
+        if "labels" not in j:
+            return extractor(cmd, stdin, timeout)
+        runner.seen.append(stdin)
+        yes = {"supported": True, "quote": " ".join(j["text"].split()[:6]), "scope_ok": True, "side_ok": True}
+        out = {"checks": [{"id": l["id"], **yes, **((check(l, j["text"]) if check else None) or {})} for l in j["labels"]]}
+        return subprocess.CompletedProcess(cmd, 0, json.dumps({"result": json.dumps(out)}), "")
+    runner.seen = []
+    return runner
+
+
+claude_ok = verified(_extractor)
+GAME = {"date": "2026-11-08", "home": "PHI", "away": "CHI"}
 
 
 def _setup(conn):
@@ -128,3 +149,79 @@ def test_defense_schemes_are_complete():
         assert k in kb.PLAYS, k
     for k in ("2-3 zone", "3-2 zone", "1-3-1 zone", "box-and-one", "drop", "switch", "man-to-man"):
         assert k in kb.COUNTERS, k
+
+
+# ---------- verifier (second, independent call per chunk) ----------
+
+def _labels(runner, conn=None):
+    return {(f["team"], f["label"]) for f in si.extract(TRANSCRIPT, GAME, "https://youtu.be/new1", "t", "m", runner, conn=conn)}
+
+
+def test_verifier_keeps_supported_labels_and_sees_only_the_labels(conn):
+    runner = verified(_extractor)
+    assert _labels(runner, conn) == {("PHI", "horns"), ("CHI", "switch")}
+    assert si.rejects(conn) == []
+    sent = json.loads(runner.seen[0])
+    assert len(runner.seen) == 1 and sent["text"] == " ".join(TRANSCRIPT.split())           # one call per chunk, same chunk
+    assert [(l["team"], l["label"], l["side"], l["scope"]) for l in sent["labels"]] == [
+        ("PHI", "horns", "offence", "game"), ("CHI", "switch", "defence", "game")]
+    assert "summary" not in runner.seen[0] and "Philly ran horns" not in runner.seen[0]      # not the extractor's reasoning
+
+
+def test_verifier_drops_and_records_unsupported_labels(conn):
+    no = lambda l, text: {"supported": False, "quote": ""} if l["label"] == "switch" else None
+    assert _labels(verified(_extractor, no), conn) == {("PHI", "horns")}
+    (r,) = si.rejects(conn)
+    assert (r["team"], r["label"], r["kind"], r["reason"], r["url"]) == ("CHI", "switch", "coverage", "not supported by the text", "https://youtu.be/new1")
+
+
+def test_quote_must_be_in_the_chunk_and_scope_and_side_must_hold(conn):
+    answers = {"horns": {"quote": "Philadelphia's whole offense is built on horns"},       # says yes, quote is made up
+               "switch": {"quote": "the  BULLS answered by\tswitching everything", "side_ok": False}}   # real quote (spacing, case), wrong side
+    assert _labels(verified(_extractor, lambda l, text: answers[l["label"]]), conn) == set()
+    assert {(r["label"], r["reason"]) for r in si.rejects(conn)} == {("horns", "quote not in the source"), ("switch", "side not supported")}
+    one_word = verified(_extractor, lambda l, text: {"quote": "horns"})                      # in the text, but proves nothing
+    assert _labels(one_word) == set()
+    system = lambda cmd, stdin, timeout: subprocess.CompletedProcess(cmd, 0, json.dumps({"result": json.dumps(
+        {"items": [{"team": "PHI", "label": "five-out", "kind": "system", "summary": "x"}]})}), "")
+    assert _labels(verified(system)) == {("PHI", "5-out")}
+    assert _labels(verified(system, lambda l, text: {"scope_ok": l["scope"] != "system"})) == set()   # one-lineup look: dropped
+
+
+def test_verifier_error_stores_nothing_and_the_pass_goes_on(conn):
+    _setup(conn)
+
+    def broken(cmd, stdin, timeout):
+        if "labels" in json.loads(stdin):
+            broken.calls += 1
+            if broken.calls % 2:
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            return subprocess.CompletedProcess(cmd, 0, json.dumps({"result": "sorry, no JSON"}), "")
+        return _extractor(cmd, stdin, timeout)
+    broken.calls = 0
+    res = si.run(conn, "2026-11-10", "m", reach=si.Reach(FakeYT(), sleep=lambda s: None), claude_runner=broken)
+    assert res["stop"] is None and res["added"] == [] and broken.calls == 2                 # analyst.run's one retry, then give up
+    assert conn.execute("select count(*) from film_items").fetchone()[0] == 0
+    assert conn.execute("select status from film_videos where url='https://youtu.be/new1'").fetchone()[0] == "done: 0 labels"
+    assert {(r["label"], r["reason"]) for r in si.rejects(conn)} == {("horns", "verifier failed"), ("switch", "verifier failed")}
+
+
+@pytest.mark.parametrize("dead", ["extractor", "verifier"])
+def test_claude_down_stops_the_pass_and_leaves_the_source_unread(conn, dead):
+    _setup(conn)
+
+    def down(cmd, stdin, timeout):
+        if ("labels" in json.loads(stdin)) == (dead == "verifier"):
+            return subprocess.CompletedProcess(cmd, 1, json.dumps({"is_error": True, "result": "Not logged in"}), "")
+        return _extractor(cmd, stdin, timeout)
+    res = si.run(conn, "2026-11-10", "m", reach=si.Reach(FakeYT(), sleep=lambda s: None), claude_runner=down)
+    assert res["stop"].startswith("claude unavailable") and res["added"] == []
+    assert conn.execute("select count(*) from film_videos where status like 'done%'").fetchone()[0] == 0   # read again tomorrow
+    assert conn.execute("select count(*) from film_games where status='done'").fetchone()[0] == 0
+
+
+def test_film_verify_off_is_the_old_single_call(conn, monkeypatch):
+    monkeypatch.setenv("FILM_VERIFY", "off")
+    runner = verified(_extractor, lambda l, text: {"supported": False})
+    assert _labels(runner, conn) == {("PHI", "horns"), ("CHI", "switch")}
+    assert runner.seen == [] and si.rejects(conn) == []

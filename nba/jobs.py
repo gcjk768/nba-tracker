@@ -1052,6 +1052,7 @@ def film(ctx, key=None):
 def _film(ctx, key):
     from . import schemes, social_intel
     from . import game_log
+    rej0 = len(social_intel.rejects(ctx.conn, 10**6))
     res = social_intel.run(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach"),
                            claude_runner=ctx.runner, first=game_log.tracked(ctx.conn))
     arts = social_intel.season_articles(ctx.conn, key, ctx.s.model_ask, reach=ctx.cache.get("reach_web"), claude_runner=ctx.runner)
@@ -1062,6 +1063,7 @@ def _film(ctx, key):
     want = [r[0] for r in ctx.conn.execute("select label, count(*) n from film_items group by label order by n desc")]
     want += [x for k, (ctrs, _) in kb.COUNTERS.items() for x in [k] + ctrs]
     vids = social_intel.play_videos(ctx.conn, list(dict.fromkeys(want)), limit=10)
+    rejected = len(social_intel.rejects(ctx.conn, 10**6)) - rej0
     added = res["added"] + garts["added"]
     by_game = {}
     for it in added:
@@ -1089,7 +1091,8 @@ def _film(ctx, key):
                        + (f", articles stopped: {arts['stop']}" if arts["stop"] else "")
                        + f", {len(garts['added'])} from {garts['games']} game write-ups ({garts['left']} games left)"
                        + (f", game by game now tracks {new_team}" if new_team else "")
+                       + (f", {rejected} labels rejected by the verifier (table film_rejects)" if rejected else "")
                        + (f", {len(clash)} contradictions" if clash else "") + (f", stopped: {res['stop']}" if res["stop"] else ""))
     return {"games": res["games"], "labels": len(added), "article_labels": len(arts["added"]), "article_teams": arts["teams"],
             "game_labels": len(garts["added"]), "game_stop": garts["stop"], "new_team": new_team,
-            "contradictions": len(clash), "stop": res["stop"], "article_stop": arts["stop"], "used": res["used"]}
+            "contradictions": len(clash), "rejected": rejected, "stop": res["stop"], "article_stop": arts["stop"], "used": res["used"]}

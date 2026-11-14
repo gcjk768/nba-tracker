@@ -1,6 +1,6 @@
 ---
 tags: [active]
-updated: 2026-11-10
+updated: 2026-11-14
 ---
 # App Overview
 
@@ -39,6 +39,10 @@ asyncio loop; pipelines run one at a time in a worker thread (`nba/scheduler.py`
   scheme labels (confidence ≤ 0.7, with evidence), record vs styles, what-wins correlations. `nba/players.py` — roster status,
   role changes, per-player shot diet.
 - `nba/playbook_kb.py` — named sets / defenses (what each is, `COUNTERS` = what beats it, `SET_TO_PLAYS` / `COVERAGE_GIVES` for the estimated success, `DEF_GROUP` = base / pick-and-roll / help / zone / junk / pressure); `nba/social_intel.py` `season_articles` + `season_videos` find this season's breakdowns per team; `web.named_sets` / `web.defense_schemes` feed the playbook cards, drawer and `/plays`.
+- Film room labels are checked twice: `nba/social_intel.py` `extract` (Haiku, `nba/prompts/film.md` / `nba/prompts/film_season.md`,
+  then `normalise`) and `verify` (a second Haiku call per chunk, `nba/prompts/film_verify.md`, schema `analyst.Checks` in
+  `nba/analyst.py`: supported + verbatim quote + scope + side; the quote must be found in the chunk by code). Failed labels
+  are not stored; they go to table `film_rejects` (append-only audit, `social_intel.rejects`). `FILM_VERIFY=off` skips it.
 - `nba/game_log.py` — focus teams (LAL, SA, PHI, OKC) game by game: plays run, defense scheme played (inferred per game,
   or reported by a write-up of that game via `social_intel.game_articles`), counters, plays allowed; `web.game_log`.
 - `nba/web.py` + `nba/dashboard.html` — animated dashboard in pages (navbar, `#today` `#games` `#playbooks` `#teams` `#race` `#model`) on NAS port 8795 (team drawer at `/team/<CODE>.json`) (title race replay, odds over time, power
